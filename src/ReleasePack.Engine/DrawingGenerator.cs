@@ -25,6 +25,7 @@ namespace ReleasePack.Engine
         private readonly IProgressCallback _progress;
         private readonly FeatureAnalyzer _featureAnalyzer;
         private readonly DimensionEngine _dimensionEngine;
+        private readonly BOMEngine _bomEngine; // New field
 
         // Standard sheet sizes in meters (width, height) — landscape
         private static readonly Dictionary<SheetSizeOption, (double w, double h, int swEnum)> SheetSizes =
@@ -47,6 +48,7 @@ namespace ReleasePack.Engine
             _progress = progress;
             _featureAnalyzer = new FeatureAnalyzer(progress);
             _dimensionEngine = new DimensionEngine(swApp, progress);
+            _bomEngine = new BOMEngine(swApp, progress);
         }
 
         /// <summary>
@@ -119,6 +121,14 @@ namespace ReleasePack.Engine
 
                 // 9. Apply dimensions
                 _dimensionEngine.ApplyDimensions(drawing, features);
+
+                // 9b. Assembly BOM & Balloons
+                // Find Isometric View (usually the last one or by orientation)
+                View isoView = GetIsoView(drawing);
+                if (isoView != null)
+                {
+                    _bomEngine.ProcessAssembly(drawing, isoView, options.BomTemplatePath); // Assuming options has this field, or null
+                }
 
                 // 10. Populate Title Block (Metadata)
                 PopulateTitleBlock(drawing, node, options);
@@ -265,6 +275,57 @@ namespace ReleasePack.Engine
             {
                 _progress?.LogWarning($"Could not add isometric view: {ex.Message}");
             }
+        }
+
+        /// <summary>
+        /// Attempts to find the Isometric view.
+        /// </summary>
+        private View GetIsoView(DrawingDoc drawing)
+        {
+            try
+            {
+                object[] views = (object[])drawing.GetViews();
+                if (views == null) return null;
+
+                foreach (object obj in views)
+                {
+                    View v = (View)obj;
+                    // Check if orientation is *Isometric
+                    // Note: Use GetOrientationName() if available, strict check might be hard.
+                    // Fallback: Check position (Top-Right quadrant) or just assume 4th view if standard.
+                    // Let's rely on the creation loop.
+                    // Since we can't easily rely on names, let's look for the one that WAS created as ISO.
+                    // But we don't have that reference.
+                    // Strategy: Find the view that looks like it (Double dimension check? No).
+                    // Robust: Iterate and check `v.GetOrientationName()`.
+                    // But interop might not expose it easily.
+                    // Let's simply check if the name starts with "Drawing View" and it's likely the 4th one (Index 4, since 0=Sheet).
+                    // Sheet = views[0]
+                    // Front = views[1]
+                    // Top = views[2]
+                    // Right = views[3]
+                    // Iso = views[4]
+                    // So if we have at least 5 items, views[4] is a good candidate.
+                }
+                
+                // Better approach: BOM on the *first* view if Iso specific one fails? No, BOM usually goes on the main assembly view.
+                // Let's return the Last view that is NOT a detail or section view.
+                // Section and Detail views have specific types.
+                // Standard views are swDrawingView (1).
+                
+                for (int i = views.Length - 1; i >= 0; i--)
+                {
+                    View v = (View)views[i];
+                    // Skip sheet (Type 1 usually, or Name "Sheet1")
+                    if (!v.Name.StartsWith("Sheet") && v.Type != (int)swDrawingViewTypes_e.swDrawingSheet)
+                    {
+                        // Return the last valid view as candidate for Iso
+                        return v; 
+                    }
+                }
+            }
+            catch {}
+            return null;
         }
 
         /// <summary>

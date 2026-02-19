@@ -128,6 +128,7 @@ namespace ReleasePack.Engine
         public ViewStandard ViewStandard { get; set; } = ViewStandard.ThirdAngle;
         public SheetSizeOption SheetSize { get; set; } = SheetSizeOption.Auto;
         public string DrawingTemplatePath { get; set; }
+        public string BomTemplatePath { get; set; }
 
         // Output folder
         public string OutputFolder { get; set; } // null = auto (next to source file)

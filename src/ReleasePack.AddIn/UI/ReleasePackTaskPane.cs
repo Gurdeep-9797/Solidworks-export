@@ -51,6 +51,8 @@ namespace ReleasePack.AddIn.UI
         private GroupBox _optionsGroup;
         private ComboBox _cmbSheetSize;
         private ComboBox _cmbViewStandard;
+        private TextBox _txtBomTemplate;
+        private Button _btnBrowseBom;
 
         // Output folder
         private GroupBox _folderGroup;
@@ -195,9 +197,9 @@ namespace ReleasePack.AddIn.UI
             // ── Display Options Group ────────────────────────────────────────────────
             var grpDisplay = new GroupBox
             {
-                Text = "Display Options",
+                Text = "Drawing Options",
                 Location = new Point(10, 360),
-                Size = new Size(280, 80)
+                Size = new Size(280, 115)
             };
             this.Controls.Add(grpDisplay);
 
@@ -290,11 +292,16 @@ namespace ReleasePack.AddIn.UI
             _cmbViewStandard.Items.AddRange(new[] { "3rd Angle (ANSI)", "1st Angle (ISO)" });
             _cmbViewStandard.SelectedIndex = 0;
 
-            _optionsGroup.Controls.AddRange(new Control[] { lblSheet, _cmbSheetSize, lblStd, _cmbViewStandard });
+            var lblBom = new Label { Text = "BOM Tpl:", Location = new Point(12, 80), Size = new Size(60, 20) };
+            _txtBomTemplate = new TextBox { Location = new Point(75, 78), Size = new Size(120, 23) };
+            _btnBrowseBom = new Button { Text = "...", Location = new Point(200, 77), Size = new Size(25, 25) };
+            _btnBrowseBom.Click += BtnBrowseBom_Click;
+
+            _optionsGroup.Controls.AddRange(new Control[] { lblSheet, _cmbSheetSize, lblStd, _cmbViewStandard, lblBom, _txtBomTemplate, _btnBrowseBom });
             contentPanel.Controls.Add(_optionsGroup);
 
             // ── Output Folder ───────────────────────────
-            y = 362;
+            y = 400;
             _folderGroup = CreateGroupBox("Save Location", y, 90);
 
             _rbFolderAuto = new RadioButton
@@ -336,7 +343,7 @@ namespace ReleasePack.AddIn.UI
             contentPanel.Controls.Add(_folderGroup);
 
             // ── Generate Button ─────────────────────────
-            y = 460;
+            y = 500;
             _btnGenerate = new Button
             {
                 Text = "⚡ GENERATE RELEASE PACK",
@@ -353,7 +360,7 @@ namespace ReleasePack.AddIn.UI
             contentPanel.Controls.Add(_btnGenerate);
 
             // ── Progress Bar ────────────────────────────
-            y = 508;
+            y = 548;
             _progressBar = new ProgressBar
             {
                 Location = new Point(8, y),
@@ -363,7 +370,7 @@ namespace ReleasePack.AddIn.UI
             contentPanel.Controls.Add(_progressBar);
 
             // ── Log Box ─────────────────────────────────
-            y = 530;
+            y = 570;
             _logBox = new RichTextBox
             {
                 Location = new Point(8, y),
@@ -434,6 +441,19 @@ namespace ReleasePack.AddIn.UI
                     _txtCustomFolder.Text = dlg.SelectedPath;
                 }
             }
+        }
+
+        private void BtnBrowseBom_Click(object sender, EventArgs e)
+        {
+             using (var dlg = new OpenFileDialog())
+             {
+                 dlg.Filter = "BOM Templates (*.sldbomtbt)|*.sldbomtbt|All Files (*.*)|*.*";
+                 dlg.Title = "Select BOM Template";
+                 if (dlg.ShowDialog() == DialogResult.OK)
+                 {
+                     _txtBomTemplate.Text = dlg.FileName;
+                 }
+             }
         }
 
         private async void BtnGenerate_Click(object sender, EventArgs e)
@@ -532,6 +552,7 @@ namespace ReleasePack.AddIn.UI
                 // Drawing options
                 SheetSize = MapSheetSize(_cmbSheetSize.SelectedIndex),
                 ViewStandard = _cmbViewStandard.SelectedIndex == 0 ? ViewStandard.ThirdAngle : ViewStandard.FirstAngle,
+                BomTemplatePath = _txtBomTemplate.Text,
 
                 // Folder
                 UseCustomFolder = _rbFolderCustom.Checked,
