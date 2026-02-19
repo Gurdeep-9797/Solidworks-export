@@ -6,10 +6,10 @@
 
 setlocal
 
-set "DLL_PATH=%~dp0..\src\ReleasePack.AddIn\bin\x64\Release\net48\ReleasePack.AddIn.dll"
+set "DLL_PATH=%~dp0..\src\ReleasePack.AddIn\bin\Release\net48\ReleasePack.AddIn.dll"
 
 if not exist "%DLL_PATH%" (
-    set "DLL_PATH=%~dp0..\src\ReleasePack.AddIn\bin\x64\Debug\net48\ReleasePack.AddIn.dll"
+    set "DLL_PATH=%~dp0..\src\ReleasePack.AddIn\bin\Debug\net48\ReleasePack.AddIn.dll"
 )
 
 if not exist "%DLL_PATH%" (
@@ -22,6 +22,12 @@ echo Unregistering: %DLL_PATH%
 
 set "REGASM=%WINDIR%\Microsoft.NET\Framework64\v4.0.30319\RegAsm.exe"
 
+if not exist "%REGASM%" (
+    echo ERROR: RegAsm.exe not found at %REGASM%
+    pause
+    exit /b 1
+)
+
 "%REGASM%" /unregister "%DLL_PATH%"
 if errorlevel 1 (
     echo.
@@ -31,5 +37,5 @@ if errorlevel 1 (
 )
 
 echo.
-echo ✓ Unregistration successful.
+echo Unregistration successful.
 pause

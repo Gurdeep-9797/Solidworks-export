@@ -25,5 +25,5 @@ jobs:
       run: dotnet restore SolidWorksReleasePack.sln
 
     - name: Build
-      run: dotnet build SolidWorksReleasePack.sln --configuration Release --no-restore -p:RegisterForComInterop=false
-      # RegisterForComInterop=false in CI — no COM registration on build agents
+      run: dotnet build SolidWorksReleasePack.sln --configuration Release --no-restore -p:SkipRegasm=true
+      # SkipRegasm=true — no COM registration on build agents (no SolidWorks installed)

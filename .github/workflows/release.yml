@@ -26,7 +26,7 @@ jobs:
       run: dotnet restore SolidWorksReleasePack.sln
 
     - name: Build Release
-      run: dotnet build SolidWorksReleasePack.sln --configuration Release --no-restore -p:RegisterForComInterop=false
+      run: dotnet build SolidWorksReleasePack.sln --configuration Release --no-restore -p:SkipRegasm=true
 
     - name: Package artifacts
       run: |

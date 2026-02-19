@@ -6,8 +6,15 @@
     <AssemblyName>ReleasePack.AddIn</AssemblyName>
     <RootNamespace>ReleasePack.AddIn</RootNamespace>
     <LangVersion>latest</LangVersion>
-    <RegisterForComInterop>true</RegisterForComInterop>
+    <RegisterForComInterop>false</RegisterForComInterop>
   </PropertyGroup>
+
+  <!-- Post-build: register with /codebase (required for SolidWorks add-ins per codestack.net).
+       Only runs locally when building as admin. Skipped in CI via /p:SkipRegasm=true -->
+  <Target Name="RegisterAddin" AfterTargets="Build" Condition="'$(SkipRegasm)' != 'true'">
+    <Exec Command="&quot;%25windir%25\Microsoft.NET\Framework64\v4.0.30319\RegAsm.exe&quot; /codebase &quot;$(TargetPath)&quot;"
+          IgnoreExitCode="true" />
+  </Target>
 
   <ItemGroup>
     <Reference Include="System.Drawing" />
