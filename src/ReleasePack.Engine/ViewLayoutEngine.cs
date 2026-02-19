@@ -11,8 +11,8 @@ namespace ReleasePack.Engine
     /// </summary>
     public class ViewLayoutEngine
     {
-        private const double MARGIN = 0.025; // 25mm margin
-        private const double VIEW_GAP = 0.030; // 30mm gap
+        private const double MARGIN = 0.030; // 30mm margin
+        private const double VIEW_GAP = 0.035; // 35mm gap
 
         public struct LayoutResult
         {

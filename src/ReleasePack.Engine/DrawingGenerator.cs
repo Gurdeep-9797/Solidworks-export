@@ -99,9 +99,11 @@ namespace ReleasePack.Engine
 
                 // 5. Place standard views
                 PlaceStandardViews(drawing, node.FilePath, sheetW, sheetH, modelW, modelH, modelD);
+                System.Windows.Forms.Application.DoEvents();
 
                 // 6. Analyze features
                 List<AnalyzedFeature> features = _featureAnalyzer.Analyze(modelDoc);
+                System.Windows.Forms.Application.DoEvents();
 
                 // 7. Add section view if needed
                 bool needsSection = features.Any(f => f.NeedsSectionView);
@@ -109,6 +111,7 @@ namespace ReleasePack.Engine
                 {
                     _progress?.LogMessage("Internal features detected → adding section view.");
                     AddSectionView(drawing, sheetW, sheetH);
+                    System.Windows.Forms.Application.DoEvents();
                 }
 
                 // 8. Add detail views for small features
@@ -117,17 +120,20 @@ namespace ReleasePack.Engine
                 {
                     _progress?.LogMessage("Small features detected → adding detail view.");
                     AddDetailView(drawing, features.Where(f => f.NeedsDetailView).ToList(), sheetW, sheetH);
+                    System.Windows.Forms.Application.DoEvents();
                 }
 
                 // 9. Apply dimensions
                 _dimensionEngine.ApplyDimensions(drawing, features);
+                System.Windows.Forms.Application.DoEvents();
 
                 // 9b. Assembly BOM & Balloons
                 // Find Isometric View (usually the last one or by orientation)
                 View isoView = GetIsoView(drawing);
                 if (isoView != null)
                 {
-                    _bomEngine.ProcessAssembly(drawing, isoView, options.BomTemplatePath); // Assuming options has this field, or null
+                    _bomEngine.ProcessAssembly(drawing, isoView, options.BomTemplatePath); 
+                    System.Windows.Forms.Application.DoEvents();
                 }
 
                 // 10. Populate Title Block (Metadata)
