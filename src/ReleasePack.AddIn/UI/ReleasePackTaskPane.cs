@@ -1,0 +1,520 @@
+using System;
+using System.Drawing;
+using System.IO;
+using System.Runtime.InteropServices;
+using System.Threading.Tasks;
+using System.Windows.Forms;
+using SolidWorks.Interop.sldworks;
+using ReleasePack.Engine;
+
+namespace ReleasePack.AddIn.UI
+{
+    /// <summary>
+    /// WinForms UserControl docked in the SolidWorks TaskPane.
+    /// Provides the complete Release Pack configuration UI.
+    /// </summary>
+    [ComVisible(true)]
+    [ProgId("ReleasePack.AddIn.UI.ReleasePackTaskPane")]
+    [Guid("D4F2E6A1-8B3C-4D7E-A5F9-1C2B3D4E5F60")]
+    public class ReleasePackTaskPane : UserControl, IProgressCallback
+    {
+        private ISldWorks _swApp;
+
+        // ── UI Controls ──────────────────────────────
+        private Panel _headerPanel;
+        private Label _titleLabel;
+
+        // Scope
+        private GroupBox _scopeGroup;
+        private RadioButton _rbCurrent;
+        private RadioButton _rbChildren;
+        private RadioButton _rbRemote;
+        private Button _btnBrowse;
+        private TextBox _txtRemotePath;
+
+        // Outputs
+        private GroupBox _outputGroup;
+        private CheckBox _chkDrawing;
+        private CheckBox _chkPDF;
+        private CheckBox _chkDXF;
+        private CheckBox _chkSTEP;
+        private CheckBox _chkParasolid;
+        private CheckBox _chkBOM;
+        private CheckBox _chkPreview;
+
+        // Options
+        private GroupBox _optionsGroup;
+        private ComboBox _cmbSheetSize;
+        private ComboBox _cmbViewStandard;
+
+        // Output folder
+        private GroupBox _folderGroup;
+        private RadioButton _rbFolderAuto;
+        private RadioButton _rbFolderCustom;
+        private TextBox _txtCustomFolder;
+        private Button _btnBrowseFolder;
+
+        // Generate
+        private Button _btnGenerate;
+        private ProgressBar _progressBar;
+        private RichTextBox _logBox;
+
+        public ReleasePackTaskPane()
+        {
+            InitializeUI();
+        }
+
+        public void Initialize(ISldWorks swApp)
+        {
+            _swApp = swApp;
+        }
+
+        #region UI Construction
+
+        private void InitializeUI()
+        {
+            this.SuspendLayout();
+            this.BackColor = Color.FromArgb(245, 247, 250);
+            this.AutoScroll = true;
+            this.Dock = DockStyle.Fill;
+            this.Font = new Font("Segoe UI", 9F);
+
+            int y = 0;
+
+            // ── Header ──────────────────────────────────
+            _headerPanel = new Panel
+            {
+                Dock = DockStyle.Top,
+                Height = 52,
+                BackColor = Color.FromArgb(27, 58, 92)
+            };
+
+            _titleLabel = new Label
+            {
+                Text = "⚡ Release Pack Generator",
+                ForeColor = Color.White,
+                Font = new Font("Segoe UI Semibold", 13F),
+                Dock = DockStyle.Fill,
+                TextAlign = ContentAlignment.MiddleCenter
+            };
+            _headerPanel.Controls.Add(_titleLabel);
+            this.Controls.Add(_headerPanel);
+
+            // Container for scrollable content
+            var contentPanel = new Panel
+            {
+                Dock = DockStyle.Fill,
+                AutoScroll = true,
+                Padding = new Padding(8)
+            };
+
+            y = 8;
+
+            // ── Scope ───────────────────────────────────
+            _scopeGroup = CreateGroupBox("Scope", y, 130);
+            y += 4;
+
+            _rbCurrent = new RadioButton
+            {
+                Text = "Current Document",
+                Location = new Point(12, 22),
+                Size = new Size(200, 20),
+                Checked = true
+            };
+
+            _rbChildren = new RadioButton
+            {
+                Text = "Current + All Children",
+                Location = new Point(12, 44),
+                Size = new Size(200, 20)
+            };
+
+            _rbRemote = new RadioButton
+            {
+                Text = "Select Remote File",
+                Location = new Point(12, 66),
+                Size = new Size(200, 20)
+            };
+            _rbRemote.CheckedChanged += (s, e) =>
+            {
+                _txtRemotePath.Enabled = _rbRemote.Checked;
+                _btnBrowse.Enabled = _rbRemote.Checked;
+            };
+
+            _txtRemotePath = new TextBox
+            {
+                Location = new Point(12, 90),
+                Size = new Size(180, 23),
+                Enabled = false
+            };
+
+            _btnBrowse = new Button
+            {
+                Text = "...",
+                Location = new Point(196, 89),
+                Size = new Size(32, 25),
+                Enabled = false
+            };
+            _btnBrowse.Click += BtnBrowseFile_Click;
+
+            _scopeGroup.Controls.AddRange(new Control[]
+                { _rbCurrent, _rbChildren, _rbRemote, _txtRemotePath, _btnBrowse });
+            contentPanel.Controls.Add(_scopeGroup);
+
+            // ── Output Types ────────────────────────────
+            y = 146;
+            _outputGroup = CreateGroupBox("Output Types", y, 120);
+
+            _chkDrawing = CreateCheckBox("Drawing (.slddrw)", 22, true);
+            _chkPDF = CreateCheckBox("PDF", 42, true);
+            _chkDXF = CreateCheckBox("DXF", 62, true);
+            _chkSTEP = CreateCheckBox("STEP (.stp)", 82, false);
+            _chkParasolid = CreateCheckBox("Parasolid (.x_t)", 22, false, 130);
+            _chkBOM = CreateCheckBox("BOM Excel (.xlsx)", 42, true, 130);
+            _chkPreview = CreateCheckBox("Preview (.png)", 62, false, 130);
+
+            _outputGroup.Controls.AddRange(new Control[]
+                { _chkDrawing, _chkPDF, _chkDXF, _chkSTEP, _chkParasolid, _chkBOM, _chkPreview });
+            contentPanel.Controls.Add(_outputGroup);
+
+            // ── Options ─────────────────────────────────
+            y = 274;
+            _optionsGroup = CreateGroupBox("Drawing Options", y, 80);
+
+            var lblSheet = new Label { Text = "Sheet Size:", Location = new Point(12, 24), Size = new Size(70, 20) };
+            _cmbSheetSize = new ComboBox
+            {
+                Location = new Point(85, 22),
+                Size = new Size(140, 23),
+                DropDownStyle = ComboBoxStyle.DropDownList
+            };
+            _cmbSheetSize.Items.AddRange(new[] { "Auto", "A4 Landscape", "A3 Landscape", "A2 Landscape", "A1 Landscape" });
+            _cmbSheetSize.SelectedIndex = 0;
+
+            var lblStd = new Label { Text = "Standard:", Location = new Point(12, 52), Size = new Size(70, 20) };
+            _cmbViewStandard = new ComboBox
+            {
+                Location = new Point(85, 50),
+                Size = new Size(140, 23),
+                DropDownStyle = ComboBoxStyle.DropDownList
+            };
+            _cmbViewStandard.Items.AddRange(new[] { "3rd Angle (ANSI)", "1st Angle (ISO)" });
+            _cmbViewStandard.SelectedIndex = 0;
+
+            _optionsGroup.Controls.AddRange(new Control[] { lblSheet, _cmbSheetSize, lblStd, _cmbViewStandard });
+            contentPanel.Controls.Add(_optionsGroup);
+
+            // ── Output Folder ───────────────────────────
+            y = 362;
+            _folderGroup = CreateGroupBox("Save Location", y, 90);
+
+            _rbFolderAuto = new RadioButton
+            {
+                Text = "Auto (next to source file)",
+                Location = new Point(12, 22),
+                Size = new Size(220, 20),
+                Checked = true
+            };
+            _rbFolderCustom = new RadioButton
+            {
+                Text = "Custom folder:",
+                Location = new Point(12, 44),
+                Size = new Size(120, 20)
+            };
+            _rbFolderCustom.CheckedChanged += (s, e) =>
+            {
+                _txtCustomFolder.Enabled = _rbFolderCustom.Checked;
+                _btnBrowseFolder.Enabled = _rbFolderCustom.Checked;
+            };
+
+            _txtCustomFolder = new TextBox
+            {
+                Location = new Point(12, 66),
+                Size = new Size(180, 23),
+                Enabled = false
+            };
+            _btnBrowseFolder = new Button
+            {
+                Text = "...",
+                Location = new Point(196, 65),
+                Size = new Size(32, 25),
+                Enabled = false
+            };
+            _btnBrowseFolder.Click += BtnBrowseFolder_Click;
+
+            _folderGroup.Controls.AddRange(new Control[]
+                { _rbFolderAuto, _rbFolderCustom, _txtCustomFolder, _btnBrowseFolder });
+            contentPanel.Controls.Add(_folderGroup);
+
+            // ── Generate Button ─────────────────────────
+            y = 460;
+            _btnGenerate = new Button
+            {
+                Text = "⚡ GENERATE RELEASE PACK",
+                Location = new Point(8, y),
+                Size = new Size(232, 40),
+                BackColor = Color.FromArgb(44, 95, 138),
+                ForeColor = Color.White,
+                FlatStyle = FlatStyle.Flat,
+                Font = new Font("Segoe UI Semibold", 11F),
+                Cursor = Cursors.Hand
+            };
+            _btnGenerate.FlatAppearance.BorderSize = 0;
+            _btnGenerate.Click += BtnGenerate_Click;
+            contentPanel.Controls.Add(_btnGenerate);
+
+            // ── Progress Bar ────────────────────────────
+            y = 508;
+            _progressBar = new ProgressBar
+            {
+                Location = new Point(8, y),
+                Size = new Size(232, 16),
+                Style = ProgressBarStyle.Continuous
+            };
+            contentPanel.Controls.Add(_progressBar);
+
+            // ── Log Box ─────────────────────────────────
+            y = 530;
+            _logBox = new RichTextBox
+            {
+                Location = new Point(8, y),
+                Size = new Size(232, 200),
+                ReadOnly = true,
+                BackColor = Color.FromArgb(30, 35, 45),
+                ForeColor = Color.FromArgb(200, 210, 220),
+                Font = new Font("Consolas", 8F),
+                BorderStyle = BorderStyle.None
+            };
+            contentPanel.Controls.Add(_logBox);
+
+            this.Controls.Add(contentPanel);
+            contentPanel.BringToFront(); // Above header
+
+            this.ResumeLayout(false);
+        }
+
+        private GroupBox CreateGroupBox(string title, int y, int height)
+        {
+            return new GroupBox
+            {
+                Text = title,
+                Location = new Point(8, y),
+                Size = new Size(232, height),
+                Font = new Font("Segoe UI Semibold", 9F),
+                ForeColor = Color.FromArgb(27, 58, 92)
+            };
+        }
+
+        private CheckBox CreateCheckBox(string text, int y, bool isChecked, int x = 12)
+        {
+            return new CheckBox
+            {
+                Text = text,
+                Location = new Point(x, y),
+                Size = new Size(115, 20),
+                Checked = isChecked,
+                Font = new Font("Segoe UI", 8.5F),
+                ForeColor = Color.FromArgb(50, 55, 65)
+            };
+        }
+
+        #endregion
+
+        #region Event Handlers
+
+        private void BtnBrowseFile_Click(object sender, EventArgs e)
+        {
+            using (var dlg = new OpenFileDialog())
+            {
+                dlg.Filter = "SolidWorks Files|*.sldprt;*.sldasm|Parts|*.sldprt|Assemblies|*.sldasm";
+                dlg.Title = "Select SolidWorks File";
+                if (dlg.ShowDialog() == DialogResult.OK)
+                {
+                    _txtRemotePath.Text = dlg.FileName;
+                }
+            }
+        }
+
+        private void BtnBrowseFolder_Click(object sender, EventArgs e)
+        {
+            using (var dlg = new FolderBrowserDialog())
+            {
+                dlg.Description = "Select output folder for Release Pack";
+                if (dlg.ShowDialog() == DialogResult.OK)
+                {
+                    _txtCustomFolder.Text = dlg.SelectedPath;
+                }
+            }
+        }
+
+        private async void BtnGenerate_Click(object sender, EventArgs e)
+        {
+            if (_swApp == null)
+            {
+                MessageBox.Show("SolidWorks is not connected.", "Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+                return;
+            }
+
+            // Validate
+            if (_swApp.ActiveDoc == null && !_rbRemote.Checked)
+            {
+                MessageBox.Show("No active document. Please open a file or select a remote file.",
+                    "No Document", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+                return;
+            }
+
+            // Build options
+            var options = BuildOptions();
+
+            // Disable UI
+            _btnGenerate.Enabled = false;
+            _btnGenerate.Text = "⏳ Generating...";
+            _progressBar.Value = 0;
+            _logBox.Clear();
+
+            try
+            {
+                LogMessage("Starting Release Pack generation...\n");
+
+                // Run on background thread (SolidWorks API must be called from main thread though)
+                var pipeline = new ExportPipeline(_swApp, this);
+                var results = pipeline.Execute(options);
+
+                // Show summary
+                if (results != null && results.Count > 0)
+                {
+                    int success = 0, failed = 0;
+                    foreach (var r in results)
+                    {
+                        if (r.Success) success++; else failed++;
+                    }
+
+                    MessageBox.Show(
+                        $"Release Pack Complete!\n\n" +
+                        $"Successful exports: {success}\n" +
+                        $"Failed exports: {failed}\n\n" +
+                        $"Output folder: {(options.UseCustomFolder ? options.OutputFolder : "(auto)")}",
+                        "Release Pack", MessageBoxButtons.OK,
+                        failed > 0 ? MessageBoxIcon.Warning : MessageBoxIcon.Information);
+                }
+            }
+            catch (Exception ex)
+            {
+                LogError($"Fatal error: {ex.Message}");
+                MessageBox.Show($"Error: {ex.Message}", "Release Pack Error",
+                    MessageBoxButtons.OK, MessageBoxIcon.Error);
+            }
+            finally
+            {
+                _btnGenerate.Enabled = true;
+                _btnGenerate.Text = "⚡ GENERATE RELEASE PACK";
+            }
+        }
+
+        #endregion
+
+        #region Build Options
+
+        private ExportOptions BuildOptions()
+        {
+            var options = new ExportOptions
+            {
+                // Scope
+                Scope = _rbCurrent.Checked ? ExportScope.CurrentDocument :
+                        _rbChildren.Checked ? ExportScope.CurrentAndChildren :
+                        ExportScope.RemoteFile,
+                RemoteFilePath = _rbRemote.Checked ? _txtRemotePath.Text : null,
+
+                // Outputs
+                GenerateDrawing = _chkDrawing.Checked,
+                ExportPDF = _chkPDF.Checked,
+                ExportDXF = _chkDXF.Checked,
+                ExportSTEP = _chkSTEP.Checked,
+                ExportParasolid = _chkParasolid.Checked,
+                ExportBOM = _chkBOM.Checked,
+                ExportPreviewImage = _chkPreview.Checked,
+
+                // Drawing options
+                SheetSize = MapSheetSize(_cmbSheetSize.SelectedIndex),
+                ViewStandard = _cmbViewStandard.SelectedIndex == 0 ? ViewStandard.ThirdAngle : ViewStandard.FirstAngle,
+
+                // Folder
+                UseCustomFolder = _rbFolderCustom.Checked,
+                OutputFolder = _rbFolderCustom.Checked ? _txtCustomFolder.Text : null
+            };
+
+            return options;
+        }
+
+        private SheetSizeOption MapSheetSize(int index)
+        {
+            switch (index)
+            {
+                case 0: return SheetSizeOption.Auto;
+                case 1: return SheetSizeOption.A4_Landscape;
+                case 2: return SheetSizeOption.A3_Landscape;
+                case 3: return SheetSizeOption.A2_Landscape;
+                case 4: return SheetSizeOption.A1_Landscape;
+                default: return SheetSizeOption.Auto;
+            }
+        }
+
+        #endregion
+
+        #region IProgressCallback
+
+        public void ReportProgress(int percent, string message)
+        {
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(() => ReportProgress(percent, message)));
+                return;
+            }
+
+            _progressBar.Value = Math.Min(percent, 100);
+            LogMessage(message);
+        }
+
+        public void LogMessage(string message)
+        {
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(() => LogMessage(message)));
+                return;
+            }
+
+            _logBox.SelectionColor = Color.FromArgb(170, 210, 240);
+            _logBox.AppendText(message + "\n");
+            _logBox.ScrollToCaret();
+        }
+
+        public void LogWarning(string message)
+        {
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(() => LogWarning(message)));
+                return;
+            }
+
+            _logBox.SelectionColor = Color.FromArgb(255, 200, 80);
+            _logBox.AppendText("⚠ " + message + "\n");
+            _logBox.ScrollToCaret();
+        }
+
+        public void LogError(string message)
+        {
+            if (InvokeRequired)
+            {
+                BeginInvoke(new Action(() => LogError(message)));
+                return;
+            }
+
+            _logBox.SelectionColor = Color.FromArgb(255, 100, 100);
+            _logBox.AppendText("✗ " + message + "\n");
+            _logBox.ScrollToCaret();
+        }
+
+        #endregion
+    }
+}
