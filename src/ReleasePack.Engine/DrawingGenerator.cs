@@ -97,49 +97,55 @@ namespace ReleasePack.Engine
 
                 ModelDoc2 drawingDoc = (ModelDoc2)drawing;
 
-                // 5. Place standard views
-                PlaceStandardViews(drawing, node.FilePath, sheetW, sheetH, modelW, modelH, modelD);
-                System.Windows.Forms.Application.DoEvents();
-
-                // 6. Analyze features
+                // 5. Analyze features FIRST (drives view selection)
                 List<AnalyzedFeature> features = _featureAnalyzer.Analyze(modelDoc);
                 System.Windows.Forms.Application.DoEvents();
 
-                // 7. Add section view if needed
-                bool needsSection = features.Any(f => f.NeedsSectionView);
-                if (needsSection)
+                // 6. Smart View Planning (decides which views are needed)
+                var viewPlan = ViewPlanner.Plan(features, modelW, modelH, modelD);
+                _progress?.LogMessage($"View Plan: {viewPlan.Summary}");
+
+                // 7. Place views according to plan & projection standard
+                PlaceStandardViews(drawing, node.FilePath, sheetW, sheetH, 
+                    modelW, modelH, modelD, options.ViewStandard,
+                    viewPlan.NeedTopView, viewPlan.NeedRightView);
+                System.Windows.Forms.Application.DoEvents();
+
+                // 8. Add section view if needed
+                if (viewPlan.NeedSectionView)
                 {
                     _progress?.LogMessage("Internal features detected → adding section view.");
                     AddSectionView(drawing, sheetW, sheetH);
                     System.Windows.Forms.Application.DoEvents();
                 }
 
-                // 8. Add detail views for small features
-                bool needsDetail = features.Any(f => f.NeedsDetailView);
-                if (needsDetail)
+                // 9. Add detail views for small features
+                if (viewPlan.NeedDetailViews)
                 {
-                    _progress?.LogMessage("Small features detected → adding detail view.");
-                    AddDetailView(drawing, features.Where(f => f.NeedsDetailView).ToList(), sheetW, sheetH);
+                    _progress?.LogMessage($"Small features detected → adding {viewPlan.DetailFeatures.Count} detail view(s).");
+                    AddDetailView(drawing, viewPlan.DetailFeatures, sheetW, sheetH);
                     System.Windows.Forms.Application.DoEvents();
                 }
 
-                // 9. Apply dimensions
+                // 10. Apply full annotation pipeline (center marks, dims, callouts, TYP notes)
                 _dimensionEngine.ApplyDimensions(drawing, features);
                 System.Windows.Forms.Application.DoEvents();
 
-                // 9b. Assembly BOM & Balloons
-                // Find Isometric View (usually the last one or by orientation)
+                // 11. Assembly BOM & Balloons
                 View isoView = GetIsoView(drawing);
                 if (isoView != null)
                 {
-                    _bomEngine.ProcessAssembly(drawing, isoView, options.BomTemplatePath); 
+                    _bomEngine.ProcessAssembly(drawing, isoView, options.BomTemplatePath);
                     System.Windows.Forms.Application.DoEvents();
                 }
 
-                // 10. Populate Title Block (Metadata)
+                // 12. Populate Title Block (Metadata)
                 PopulateTitleBlock(drawing, node, options);
 
-                // 11. Save Drawing
+                // 13. Force rebuild to ensure all annotations are current
+                drawingDoc.ForceRebuild3(false);
+
+                // 14. Save Drawing
                 string drawingPath = GetOutputPath(node, outputDir, ".slddrw");
                 SaveDrawing(drawingDoc, drawingPath);
 
@@ -214,40 +220,58 @@ namespace ReleasePack.Engine
         }
 
         /// <summary>
-        /// Place the standard 3rd angle projection views on the sheet using LayoutEngine.
+        /// Place the standard projection views on the sheet using LayoutEngine.
+        /// Supports both 1st Angle (ISO) and 3rd Angle (ANSI) projection.
         /// </summary>
         private void PlaceStandardViews(DrawingDoc drawing, string modelPath,
             double sheetW, double sheetH,
-            double modelW, double modelH, double modelD)
+            double modelW, double modelH, double modelD,
+            ViewStandard standard = ViewStandard.ThirdAngle,
+            bool includeTop = true, bool includeRight = true)
         {
-            _progress?.LogMessage("Calculating optimal view layout...");
+            string projName = standard == ViewStandard.ThirdAngle ? "3rd Angle (ANSI)" : "1st Angle (ISO)";
+            _progress?.LogMessage($"Calculating view layout ({projName})...");
 
             var layoutEngine = new ViewLayoutEngine();
-            var layout = layoutEngine.CalculateLayout(sheetW, sheetH, modelW, modelH, modelD);
+            var layout = layoutEngine.CalculateLayout(
+                sheetW, sheetH, modelW, modelH, modelD,
+                standard, includeTop, includeRight);
 
-            _progress?.LogMessage($"Layout calculated: Scale 1:{1/layout.Scale:F1}");
+            _progress?.LogMessage($"Layout: Scale 1:{1/layout.Scale:F1}, " +
+                $"Views: Front{(includeTop ? "+Top" : "")}{(includeRight ? "+Right" : "")}+Iso");
 
             try
             {
-                // Front View
+                // Front View (always present)
                 View frontView = (View)drawing.CreateDrawViewFromModelView3(
                     modelPath, "*Front", layout.FrontX, layout.FrontY, 0);
                 if (frontView != null) frontView.ScaleRatio = new double[] { layout.Scale, 1.0 };
 
-                // Top View
-                View topView = (View)drawing.CreateDrawViewFromModelView3(
-                    modelPath, "*Top", layout.TopX, layout.TopY, 0);
-                 if (topView != null) topView.ScaleRatio = new double[] { layout.Scale, 1.0 };
+                // Top View (optional per ViewPlanner)
+                if (includeTop)
+                {
+                    View topView = (View)drawing.CreateDrawViewFromModelView3(
+                        modelPath, "*Top", layout.TopX, layout.TopY, 0);
+                    if (topView != null) topView.ScaleRatio = new double[] { layout.Scale, 1.0 };
+                }
 
-                // Right View
-                View rightView = (View)drawing.CreateDrawViewFromModelView3(
-                    modelPath, "*Right", layout.RightX, layout.RightY, 0);
-                 if (rightView != null) rightView.ScaleRatio = new double[] { layout.Scale, 1.0 };
+                // Right View (optional per ViewPlanner)
+                if (includeRight)
+                {
+                    // For 1st Angle: "Right" projection goes to the LEFT of Front.
+                    // The layout engine handles positioning, so we still use *Right orientation.
+                    // For 1st Angle, we could use *Left instead since it shows
+                    // the view "as projected through the object". However, SolidWorks
+                    // handles this in projection mode — the view name is the same.
+                    View rightView = (View)drawing.CreateDrawViewFromModelView3(
+                        modelPath, "*Right", layout.RightX, layout.RightY, 0);
+                    if (rightView != null) rightView.ScaleRatio = new double[] { layout.Scale, 1.0 };
+                }
 
-                // Isometric View
+                // Isometric View (always, slightly smaller)
                 View isoView = (View)drawing.CreateDrawViewFromModelView3(
                     modelPath, "*Isometric", layout.IsoX, layout.IsoY, 0);
-                 if (isoView != null) isoView.ScaleRatio = new double[] { layout.Scale * 0.75, 1.0 }; // ISO usually slightly smaller or same
+                if (isoView != null) isoView.ScaleRatio = new double[] { layout.Scale * 0.75, 1.0 };
             }
             catch (Exception ex)
             {

@@ -75,6 +75,12 @@ namespace ReleasePack.Engine
         public bool NeedsSectionView { get; set; }
         public bool NeedsDetailView { get; set; }
         public bool IsInternal { get; set; }
+        public bool NeedsAuxiliaryView { get; set; }
+        public double AuxiliaryAngle { get; set; }
+
+        // TYP grouping (fillets/chamfers of same size)
+        public bool IsTypical { get; set; }
+        public string TypicalGroupId { get; set; }
 
         /// <summary>Thread callout string if applicable (e.g., "M8x1.25").</summary>
         public string ThreadCallout { get; set; }
@@ -97,6 +103,10 @@ namespace ReleasePack.Engine
         Rib,
         Shell,
         Mirror,
+        CounterBore,
+        CounterSink,
+        Sweep,
+        Loft,
         Other
     }
 
