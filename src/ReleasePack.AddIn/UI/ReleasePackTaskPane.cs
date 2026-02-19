@@ -29,6 +29,11 @@ namespace ReleasePack.AddIn.UI
         private RadioButton _rbCurrent;
         private RadioButton _rbChildren;
         private RadioButton _rbRemote;
+        // Metadata Controls
+        private TextBox _txtCompany;
+        private TextBox _txtProject;
+        private TextBox _txtDrawnBy;
+        private TextBox _txtCheckedBy;
         private Button _btnBrowse;
         private TextBox _txtRemotePath;
 
@@ -57,6 +62,7 @@ namespace ReleasePack.AddIn.UI
         // Generate
         private Button _btnGenerate;
         private ProgressBar _progressBar;
+        private Label _lblStatus;
         private RichTextBox _logBox;
 
         public ReleasePackTaskPane()
@@ -67,6 +73,18 @@ namespace ReleasePack.AddIn.UI
         public void Initialize(ISldWorks swApp)
         {
             _swApp = swApp;
+
+            // Auto-select based on active doc type
+            if (_swApp.ActiveDoc is AssemblyDoc)
+            {
+                _rbChildren.Checked = true;
+                _rbCurrent.Checked = false;
+            }
+            else
+            {
+                _rbCurrent.Checked = true;
+                _rbChildren.Checked = false;
+            }
         }
 
         #region UI Construction
@@ -116,18 +134,89 @@ namespace ReleasePack.AddIn.UI
 
             _rbCurrent = new RadioButton
             {
-                Text = "Current Document",
+                Text = "Current Document Only",
                 Location = new Point(12, 22),
                 Size = new Size(200, 20),
-                Checked = true
+                Checked = true 
             };
 
             _rbChildren = new RadioButton
             {
-                Text = "Current + All Children",
+                Text = "Current + All Children (Assembly)",
                 Location = new Point(12, 44),
                 Size = new Size(200, 20)
             };
+
+            // ── Project Details Group ────────────────────────────────────────────────
+            var grpProject = new GroupBox
+            {
+                Text = "Project Metadata (Title Block)",
+                Location = new Point(10, 100),
+                Size = new Size(280, 140)
+            };
+            this.Controls.Add(grpProject);
+
+            int lblX = 10, txtX = 90;
+            y = 20; // Reset y for this group
+            int step = 28;
+
+            // Company
+            grpProject.Controls.Add(new Label { Text = "Company:", Location = new Point(lblX, y + 3), AutoSize = true });
+            _txtCompany = new TextBox { Location = new Point(txtX, y), Size = new Size(180, 20) };
+            grpProject.Controls.Add(_txtCompany);
+
+            // Project
+            y += step;
+            grpProject.Controls.Add(new Label { Text = "Project:", Location = new Point(lblX, y + 3), AutoSize = true });
+            _txtProject = new TextBox { Location = new Point(txtX, y), Size = new Size(180, 20) };
+            grpProject.Controls.Add(_txtProject);
+
+            // Drawn By
+            y += step;
+            grpProject.Controls.Add(new Label { Text = "Drawn By:", Location = new Point(lblX, y + 3), AutoSize = true });
+            _txtDrawnBy = new TextBox { Location = new Point(txtX, y), Size = new Size(180, 20), Text = System.Environment.UserName };
+            grpProject.Controls.Add(_txtDrawnBy);
+
+            // Checked By
+            y += step;
+            grpProject.Controls.Add(new Label { Text = "Checked By:", Location = new Point(lblX, y + 3), AutoSize = true });
+            _txtCheckedBy = new TextBox { Location = new Point(txtX, y), Size = new Size(180, 20) };
+            grpProject.Controls.Add(_txtCheckedBy);
+
+
+            // ── Output Options Group ─────────────────────────────────────────────────
+            var grpOutput = new GroupBox
+            {
+                Text = "Output Options",
+                Location = new Point(10, 250),
+                Size = new Size(280, 100)
+            };
+
+            // ── Display Options Group ────────────────────────────────────────────────
+            var grpDisplay = new GroupBox
+            {
+                Text = "Display Options",
+                Location = new Point(10, 360),
+                Size = new Size(280, 80)
+            };
+            this.Controls.Add(grpDisplay);
+
+            _progressBar = new ProgressBar
+            {
+                Location = new Point(10, 500),
+                Size = new Size(280, 15),
+                Visible = false
+            };
+            this.Controls.Add(_progressBar);
+
+            _lblStatus = new Label
+            {
+                Text = "Ready",
+                Location = new Point(10, 520),
+                AutoSize = true,
+                ForeColor = Color.Gray
+            };
+            this.Controls.Add(_lblStatus);
 
             _rbRemote = new RadioButton
             {
@@ -421,12 +510,17 @@ namespace ReleasePack.AddIn.UI
             var options = new ExportOptions
             {
                 // Scope
-                Scope = _rbCurrent.Checked ? ExportScope.CurrentDocument :
-                        _rbChildren.Checked ? ExportScope.CurrentAndChildren :
-                        ExportScope.RemoteFile,
-                RemoteFilePath = _rbRemote.Checked ? _txtRemotePath.Text : null,
+                Scope = _rbChildren.Checked ? ExportScope.CurrentAndChildren :
+                        _rbRemote.Checked ? ExportScope.RemoteFile :
+                        ExportScope.CurrentDocument,
 
-                // Outputs
+                // Metadata
+                CompanyName = _txtCompany.Text,
+                ProjectName = _txtProject.Text,
+                DrawnBy = _txtDrawnBy.Text,
+                CheckedBy = _txtCheckedBy.Text,
+
+                RemoteFilePath = _rbRemote.Checked ? _txtRemotePath.Text : null,
                 GenerateDrawing = _chkDrawing.Checked,
                 ExportPDF = _chkPDF.Checked,
                 ExportDXF = _chkDXF.Checked,

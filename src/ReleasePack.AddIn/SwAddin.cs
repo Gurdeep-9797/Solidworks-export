@@ -75,15 +75,30 @@ namespace ReleasePack.AddIn
             {
                 ICommandManager cmdMgr = _swApp.GetCommandManager(_addinCookie);
 
+                // Get the assembly directory
+                string assemblyDir = System.IO.Path.GetDirectoryName(new Uri(System.Reflection.Assembly.GetExecutingAssembly().CodeBase).LocalPath);
+                string iconDir = System.IO.Path.Combine(assemblyDir, "UI", "Icons");
+
+                string[] iconList = new string[] {
+                    System.IO.Path.Combine(iconDir, "icon_20.png"),
+                    System.IO.Path.Combine(iconDir, "icon_32.png"),
+                    System.IO.Path.Combine(iconDir, "icon_40.png"),
+                    System.IO.Path.Combine(iconDir, "icon_64.png"),
+                    System.IO.Path.Combine(iconDir, "icon_96.png"),
+                    System.IO.Path.Combine(iconDir, "icon_128.png")
+                };
+
                 CommandGroup cmdGroup = cmdMgr.CreateCommandGroup(CMD_GROUP_ID,
                     "Release Pack", "One-click release pack generator", "", -1);
 
                 if (cmdGroup != null)
                 {
-                    cmdGroup.LargeMainIcon = "";
-                    cmdGroup.SmallMainIcon = "";
+                    cmdGroup.LargeMainIcon = System.IO.Path.Combine(iconDir, "icon_32.png");
+                    cmdGroup.SmallMainIcon = System.IO.Path.Combine(iconDir, "icon_16.png");
+                    // cmdGroup.LargeIconList = iconList; // Commented out due to interop version mismatch
+                    // cmdGroup.SmallIconList = iconList;
 
-                    cmdGroup.AddCommandItem2(
+                    int index = cmdGroup.AddCommandItem2(
                         "Generate Release Pack", -1,
                         "Open Release Pack Generator", "Click to open Release Pack panel",
                         0, "OnReleasePackClick", "", CMD_GROUP_ID, CMD_RELEASE_PACK);

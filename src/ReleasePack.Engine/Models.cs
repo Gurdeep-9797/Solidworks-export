@@ -108,6 +108,12 @@ namespace ReleasePack.Engine
         // Scope
         public ExportScope Scope { get; set; } = ExportScope.CurrentDocument;
         public string RemoteFilePath { get; set; }
+        
+        // Project Metadata (for Title Block)
+        public string CompanyName { get; set; }
+        public string ProjectName { get; set; }
+        public string DrawnBy { get; set; }
+        public string CheckedBy { get; set; }
 
         // Output types
         public bool GenerateDrawing { get; set; } = true;

@@ -50,10 +50,10 @@ namespace ReleasePack.Engine
         }
 
         /// <summary>
-        /// Generate a drawing for the given model node.
+        /// Generates a drawing for the given model node.
         /// Returns the path to the saved drawing file, or null on failure.
         /// </summary>
-        public string Generate(ModelNode node, ExportOptions options, string outputFolder)
+        public string Generate(ModelNode node, string outputDir, ExportOptions options)
         {
             _progress?.LogMessage($"── Generating drawing for: {node.FileName} ──");
 
@@ -96,7 +96,7 @@ namespace ReleasePack.Engine
                 ModelDoc2 drawingDoc = (ModelDoc2)drawing;
 
                 // 5. Place standard views
-                PlaceStandardViews(drawing, node.FilePath, sheetW, sheetH, scale, modelW, modelH, modelD);
+                PlaceStandardViews(drawing, node.FilePath, sheetW, sheetH, modelW, modelH, modelD);
 
                 // 6. Analyze features
                 List<AnalyzedFeature> features = _featureAnalyzer.Analyze(modelDoc);
@@ -120,11 +120,11 @@ namespace ReleasePack.Engine
                 // 9. Apply dimensions
                 _dimensionEngine.ApplyDimensions(drawing, features);
 
-                // 10. Populate title block
-                PopulateTitleBlock(drawingDoc, node);
+                // 10. Populate Title Block (Metadata)
+                PopulateTitleBlock(drawing, node, options);
 
-                // 11. Save drawing
-                string drawingPath = GetOutputPath(node, outputFolder, ".slddrw");
+                // 11. Save Drawing
+                string drawingPath = GetOutputPath(node, outputDir, ".slddrw");
                 SaveDrawing(drawingDoc, drawingPath);
 
                 _progress?.LogMessage($"Drawing saved: {drawingPath}");
@@ -198,83 +198,44 @@ namespace ReleasePack.Engine
         }
 
         /// <summary>
-        /// Place the standard 3rd angle projection views on the sheet.
+        /// Place the standard 3rd angle projection views on the sheet using LayoutEngine.
         /// </summary>
         private void PlaceStandardViews(DrawingDoc drawing, string modelPath,
-            double sheetW, double sheetH, double scale,
+            double sheetW, double sheetH,
             double modelW, double modelH, double modelD)
         {
-            _progress?.LogMessage("Placing standard orthographic views...");
+            _progress?.LogMessage("Calculating optimal view layout...");
+
+            var layoutEngine = new ViewLayoutEngine();
+            var layout = layoutEngine.CalculateLayout(sheetW, sheetH, modelW, modelH, modelD);
+
+            _progress?.LogMessage($"Layout calculated: Scale 1:{1/layout.Scale:F1}");
 
             try
             {
-                // Use SW's built-in 3rd angle views first
-                bool created = drawing.Create3rdAngleViews2(modelPath);
-
-                if (created)
-                {
-                    _progress?.LogMessage("3rd angle views created successfully.");
-
-                    // Set scale on all views
-                    SetAllViewScales(drawing, scale);
-                }
-                else
-                {
-                    _progress?.LogWarning("Create3rdAngleViews2 failed. Placing views manually...");
-                    PlaceViewsManually(drawing, modelPath, sheetW, sheetH, scale);
-                }
-
-                // Always add isometric view
-                AddIsometricView(drawing, modelPath, sheetW, sheetH, scale, modelW, modelH, modelD);
-            }
-            catch (Exception ex)
-            {
-                _progress?.LogWarning($"Standard view placement error: {ex.Message}. Attempting manual placement...");
-                PlaceViewsManually(drawing, modelPath, sheetW, sheetH, scale);
-            }
-        }
-
-        /// <summary>
-        /// Fallback: place views manually using CreateDrawViewFromModelView3.
-        /// </summary>
-        private void PlaceViewsManually(DrawingDoc drawing, string modelPath,
-            double sheetW, double sheetH, double scale)
-        {
-            double cx = sheetW * 0.3;
-            double cy = sheetH * 0.4;
-
-            try
-            {
-                // Front view
+                // Front View
                 View frontView = (View)drawing.CreateDrawViewFromModelView3(
-                    modelPath, "*Front", cx, cy, 0);
-                if (frontView != null)
-                {
-                    frontView.ScaleRatio = new double[] { scale, 1.0 };
-                    _progress?.LogMessage("Front view placed.");
-                }
+                    modelPath, "*Front", layout.FrontX, layout.FrontY, 0);
+                if (frontView != null) frontView.ScaleRatio = new double[] { layout.Scale, 1.0 };
 
-                // Top view (above front)
+                // Top View
                 View topView = (View)drawing.CreateDrawViewFromModelView3(
-                    modelPath, "*Top", cx, sheetH * 0.75, 0);
-                if (topView != null)
-                {
-                    topView.ScaleRatio = new double[] { scale, 1.0 };
-                    _progress?.LogMessage("Top view placed.");
-                }
+                    modelPath, "*Top", layout.TopX, layout.TopY, 0);
+                 if (topView != null) topView.ScaleRatio = new double[] { layout.Scale, 1.0 };
 
-                // Right view (right of front)
+                // Right View
                 View rightView = (View)drawing.CreateDrawViewFromModelView3(
-                    modelPath, "*Right", sheetW * 0.65, cy, 0);
-                if (rightView != null)
-                {
-                    rightView.ScaleRatio = new double[] { scale, 1.0 };
-                    _progress?.LogMessage("Right view placed.");
-                }
+                    modelPath, "*Right", layout.RightX, layout.RightY, 0);
+                 if (rightView != null) rightView.ScaleRatio = new double[] { layout.Scale, 1.0 };
+
+                // Isometric View
+                View isoView = (View)drawing.CreateDrawViewFromModelView3(
+                    modelPath, "*Isometric", layout.IsoX, layout.IsoY, 0);
+                 if (isoView != null) isoView.ScaleRatio = new double[] { layout.Scale * 0.75, 1.0 }; // ISO usually slightly smaller or same
             }
             catch (Exception ex)
             {
-                _progress?.LogError($"Manual view placement failed: {ex.Message}");
+                _progress?.LogWarning($"View placement failed: {ex.Message}");
             }
         }
 
@@ -479,35 +440,49 @@ namespace ReleasePack.Engine
         /// <summary>
         /// Populate drawing title block with custom property values.
         /// </summary>
-        private void PopulateTitleBlock(ModelDoc2 drawingDoc, ModelNode node)
+        private void PopulateTitleBlock(DrawingDoc drawing, ModelNode model, ExportOptions options)
         {
-            try
+            var swModel = (ModelDoc2)drawing;
+
+            // Define the map of CustomProperty -> Value
+            var props = new Dictionary<string, string>
             {
-                _progress?.LogMessage("Populating title block...");
+                { "Description", model.Description },
+                { "PartNo", model.PartNumber },
+                { "Material", model.Material },
+                { "Revision", model.Revision },
 
-                CustomPropertyManager propMgr =
-                    (CustomPropertyManager)drawingDoc.Extension.CustomPropertyManager[""];
+                // Project Metadata from UI
+                { "Company", options.CompanyName },
+                { "Project", options.ProjectName },
+                { "DrawnBy", options.DrawnBy },
+                { "CheckedBy", options.CheckedBy },
+                { "Date", DateTime.Now.ToShortDateString() }
+            };
 
-                if (propMgr == null) return;
-
-                // Standard title block properties
-                SetProperty(propMgr, "PartNumber", node.PartNumber);
-                SetProperty(propMgr, "Description", node.Description);
-                SetProperty(propMgr, "Revision", node.Revision);
-                SetProperty(propMgr, "Material", node.Material);
-                SetProperty(propMgr, "DrawnBy", System.Environment.UserName);
-                SetProperty(propMgr, "DrawnDate", DateTime.Now.ToString("yyyy-MM-dd"));
-
-                // Also set SW-specific custom props
-                SetProperty(propMgr, "CompanyName", node.CustomProperties.ContainsKey("CompanyName")
-                    ? node.CustomProperties["CompanyName"] : "");
-
-                _progress?.LogMessage("Title block populated.");
-            }
-            catch (Exception ex)
+            foreach (var kvp in props)
             {
-                _progress?.LogWarning($"Title block population warning: {ex.Message}");
+                if (!string.IsNullOrEmpty(kvp.Value))
+                {
+                    // Add both to the file SummaryInfo and CustomPropertyManager for robustness
+                    // (Some templates use $PRP:"Prop", others $PRPSHEET:"Prop")
+
+                    // 1. File-level Custom Property
+                    var cusPropMgr = swModel.Extension.get_CustomPropertyManager("");
+                    cusPropMgr.Add3(kvp.Key, (int)swCustomInfoType_e.swCustomInfoText, kvp.Value, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
+
+                    // 2. Configuration-specific Property (Default config)
+                    var configNames = (string[])swModel.GetConfigurationNames();
+                    if (configNames != null && configNames.Length > 0)
+                    {
+                        var configPropMgr = swModel.Extension.get_CustomPropertyManager(configNames[0]);
+                        configPropMgr.Add3(kvp.Key, (int)swCustomInfoType_e.swCustomInfoText, kvp.Value, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
+                    }
+                }
             }
+
+            // Force rebuild to update linked notes
+            swModel.ForceRebuild3(false);
         }
 
         private void SetProperty(CustomPropertyManager propMgr, string name, string value)

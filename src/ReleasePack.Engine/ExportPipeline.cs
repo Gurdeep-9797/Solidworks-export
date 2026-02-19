@@ -77,11 +77,11 @@ namespace ReleasePack.Engine
                         string drawingPath;
                         if (node.NodeType == ModelNodeType.Assembly)
                         {
-                            drawingPath = _assyDrawingGen.Generate(node, options, outputFolder);
+                            drawingPath = _assyDrawingGen.Generate(node, outputFolder, options);
                         }
                         else
                         {
-                            drawingPath = _drawingGen.Generate(node, options, outputFolder);
+                            drawingPath = _drawingGen.Generate(node, outputFolder, options);
                         }
 
                         results.Add(new ExportResult

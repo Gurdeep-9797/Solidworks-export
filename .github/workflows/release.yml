@@ -22,6 +22,14 @@ jobs:
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v2
 
+    - name: Cache NuGet packages
+      uses: actions/cache@v3
+      with:
+        path: ~/.nuget/packages
+        key: ${{ runner.os }}-nuget-${{ hashFiles('**/*.csproj', '**/*.sln') }}
+        restore-keys: |
+          ${{ runner.os }}-nuget-
+
     - name: Restore NuGet packages
       run: dotnet restore SolidWorksReleasePack.sln
 
@@ -34,6 +42,7 @@ jobs:
         $outDir = "release-pack-$tag"
         New-Item -ItemType Directory -Path $outDir -Force
         Copy-Item "src/ReleasePack.AddIn/bin/x64/Release/net48/*" -Destination $outDir -Recurse -Force
+        Copy-Item "src/ReleasePack.Installer/bin/Release/ReleasePack.Installer.exe" -Destination $outDir -Force
         Copy-Item "scripts/*" -Destination "$outDir/scripts" -Recurse -Force
         Copy-Item "README.md" -Destination $outDir -Force
         Compress-Archive -Path $outDir -DestinationPath "SolidWorksReleasePack-$tag.zip"

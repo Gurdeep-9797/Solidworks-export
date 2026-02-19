@@ -24,7 +24,7 @@ namespace ReleasePack.Engine
         /// <summary>
         /// Generate an assembly drawing with exploded ISO view, balloons, and BOM.
         /// </summary>
-        public string Generate(ModelNode assemblyNode, ExportOptions options, string outputFolder)
+        public string Generate(ModelNode assemblyNode, string outputFolder, ExportOptions options)
         {
             _progress?.LogMessage($"── Generating assembly drawing for: {assemblyNode.FileName} ──");
 
@@ -88,11 +88,11 @@ namespace ReleasePack.Engine
                 // 4. Insert BOM table
                 InsertBomTable(drawing, isoView, assemblyNode);
 
-                // 5. Populate title block
-                PopulateTitleBlock(drawingDoc, assemblyNode);
+                // 5. Populate Title Block (Metadata from UI)
+                PopulateTitleBlock(drawing, assemblyNode, options);
 
-                // 6. Save
-                string drawingPath = DrawingGenerator.GetOutputPath(assemblyNode, outputFolder, ".slddrw");
+                // 6. Save Drawing
+                string drawingPath = Path.Combine(outputFolder, Path.GetFileNameWithoutExtension(assemblyNode.FilePath) + ".SLDDRW");
                 Directory.CreateDirectory(Path.GetDirectoryName(drawingPath));
 
                 int errors = 0, warnings = 0;
@@ -250,28 +250,44 @@ namespace ReleasePack.Engine
             return null;
         }
 
-        private void PopulateTitleBlock(ModelDoc2 drawingDoc, ModelNode node)
+
+
+        private void PopulateTitleBlock(DrawingDoc drawing, ModelNode model, ExportOptions options)
         {
             try
             {
-                CustomPropertyManager propMgr =
-                    (CustomPropertyManager)drawingDoc.Extension.CustomPropertyManager[""];
-                if (propMgr == null) return;
+                var swModel = (ModelDoc2)drawing;
+                 // Define the map of CustomProperty -> Value
+                var props = new Dictionary<string, string>
+                {
+                    { "Description", model.Description },
+                    { "PartNo", model.PartNumber },
+                    { "Material", model.Material },
+                    { "Revision", model.Revision },
+                    
+                    // Project Metadata
+                    { "Company", options.CompanyName },
+                    { "Project", options.ProjectName },
+                    { "DrawnBy", options.DrawnBy },
+                    { "CheckedBy", options.CheckedBy },
+                    { "Date", DateTime.Now.ToShortDateString() }
+                };
 
-                propMgr.Add3("PartNumber", (int)swCustomInfoType_e.swCustomInfoText,
-                    node.PartNumber, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
-                propMgr.Add3("Description", (int)swCustomInfoType_e.swCustomInfoText,
-                    node.Description, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
-                propMgr.Add3("Revision", (int)swCustomInfoType_e.swCustomInfoText,
-                    node.Revision, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
-                propMgr.Add3("DrawnBy", (int)swCustomInfoType_e.swCustomInfoText,
-                    System.Environment.UserName, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
-                propMgr.Add3("DrawnDate", (int)swCustomInfoType_e.swCustomInfoText,
-                    DateTime.Now.ToString("yyyy-MM-dd"), (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
+                var cusPropMgr = swModel.Extension.get_CustomPropertyManager("");
+                foreach (var kvp in props)
+                {
+                    if (!string.IsNullOrEmpty(kvp.Value))
+                    {
+                         cusPropMgr.Add3(kvp.Key, (int)swCustomInfoType_e.swCustomInfoText, kvp.Value, (int)swCustomPropertyAddOption_e.swCustomPropertyDeleteAndAdd);
+                    }
+                }
+
+                // Force rebuild
+                swModel.ForceRebuild3(false);
             }
             catch (Exception ex)
             {
-                _progress?.LogWarning($"Title block population warning: {ex.Message}");
+                _progress?.LogWarning($"Title block population failed: {ex.Message}");
             }
         }
 
