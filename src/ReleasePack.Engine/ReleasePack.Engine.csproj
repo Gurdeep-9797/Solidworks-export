@@ -6,6 +6,8 @@
     <AssemblyName>ReleasePack.Engine</AssemblyName>
     <RootNamespace>ReleasePack.Engine</RootNamespace>
     <LangVersion>latest</LangVersion>
+    <SignAssembly>true</SignAssembly>
+    <AssemblyOriginatorKeyFile>ReleasePackKey.snk</AssemblyOriginatorKeyFile>
   </PropertyGroup>
 
   <ItemGroup>

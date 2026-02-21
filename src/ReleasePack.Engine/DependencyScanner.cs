@@ -32,7 +32,6 @@ namespace ReleasePack.Engine
             var results = new List<ModelNode>();
 
             ModelDoc2 rootDoc = null;
-            bool openedRemote = false;
 
             switch (options.Scope)
             {
@@ -55,7 +54,6 @@ namespace ReleasePack.Engine
                     if (rootDoc == null)
                         throw new InvalidOperationException($"Failed to open '{options.RemoteFilePath}'. Error code: {errors}");
 
-                    openedRemote = true;
                     break;
             }
 

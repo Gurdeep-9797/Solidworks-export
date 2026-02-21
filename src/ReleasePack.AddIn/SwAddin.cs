@@ -5,6 +5,7 @@ using SolidWorks.Interop.sldworks;
 using SolidWorks.Interop.swpublished;
 using SolidWorks.Interop.swconst;
 using ReleasePack.AddIn.UI;
+using ReleasePack.AddIn.McpServer;
 
 namespace ReleasePack.AddIn
 {
@@ -24,9 +25,9 @@ namespace ReleasePack.AddIn
         private int _addinCookie;
         private ITaskpaneView _taskpaneView;
         private ReleasePackTaskPane _taskPane;
+        private SwMcpServer _mcpServer;
 
-        private const int CMD_GROUP_ID = 42;
-        private const int CMD_RELEASE_PACK = 1;
+        private CommandTabBuilder _tabBuilder;
 
         #region ISwAddin Implementation
 
@@ -38,15 +39,27 @@ namespace ReleasePack.AddIn
 
             _swApp.SetAddinCallbackInfo(0, this, _addinCookie);
 
-            CreateCommandManager();
+            _tabBuilder = new CommandTabBuilder(_swApp, _addinCookie);
+            _tabBuilder.Build();
             CreateTaskpane();
+
+            // Start embedded MCP server for AI control
+            try
+            {
+                _mcpServer = new SwMcpServer(_swApp);
+                _mcpServer.Start();
+            }
+            catch (Exception ex)
+            {
+                System.Diagnostics.Trace.WriteLine("MCP Server failed to start: " + ex.Message);
+            }
 
             return true;
         }
 
         public bool DisconnectFromSW()
         {
-            RemoveCommandManager();
+            _tabBuilder?.Remove();
 
             if (_taskpaneView != null)
             {
@@ -54,6 +67,10 @@ namespace ReleasePack.AddIn
                 Marshal.ReleaseComObject(_taskpaneView);
                 _taskpaneView = null;
             }
+
+            // Stop MCP server
+            _mcpServer?.Dispose();
+            _mcpServer = null;
 
             _taskPane = null;
             _swApp = null;
@@ -69,60 +86,7 @@ namespace ReleasePack.AddIn
 
         #region UI Setup
 
-        private void CreateCommandManager()
-        {
-            try
-            {
-                ICommandManager cmdMgr = _swApp.GetCommandManager(_addinCookie);
 
-                // Get the assembly directory
-                string assemblyDir = System.IO.Path.GetDirectoryName(new Uri(System.Reflection.Assembly.GetExecutingAssembly().CodeBase).LocalPath);
-                string iconDir = System.IO.Path.Combine(assemblyDir, "UI", "Icons");
-
-                string[] iconList = new string[] {
-                    System.IO.Path.Combine(iconDir, "icon_20.png"),
-                    System.IO.Path.Combine(iconDir, "icon_32.png"),
-                    System.IO.Path.Combine(iconDir, "icon_40.png"),
-                    System.IO.Path.Combine(iconDir, "icon_64.png"),
-                    System.IO.Path.Combine(iconDir, "icon_96.png"),
-                    System.IO.Path.Combine(iconDir, "icon_128.png")
-                };
-
-                CommandGroup cmdGroup = cmdMgr.CreateCommandGroup(CMD_GROUP_ID,
-                    "Release Pack", "One-click release pack generator", "", -1);
-
-                if (cmdGroup != null)
-                {
-                    cmdGroup.LargeMainIcon = System.IO.Path.Combine(iconDir, "icon_32.png");
-                    cmdGroup.SmallMainIcon = System.IO.Path.Combine(iconDir, "icon_16.png");
-                    // cmdGroup.LargeIconList = iconList; // Commented out due to interop version mismatch
-                    // cmdGroup.SmallIconList = iconList;
-
-                    int index = cmdGroup.AddCommandItem2(
-                        "Generate Release Pack", -1,
-                        "Open Release Pack Generator", "Click to open Release Pack panel",
-                        0, "OnReleasePackClick", "", CMD_GROUP_ID, CMD_RELEASE_PACK);
-
-                    cmdGroup.HasToolbar = true;
-                    cmdGroup.HasMenu = true;
-                    cmdGroup.Activate();
-                }
-            }
-            catch (Exception ex)
-            {
-                System.Diagnostics.Trace.WriteLine("CreateCommandManager failed: " + ex.Message);
-            }
-        }
-
-        private void RemoveCommandManager()
-        {
-            try
-            {
-                ICommandManager cmdMgr = _swApp.GetCommandManager(_addinCookie);
-                cmdMgr.RemoveCommandGroup(CMD_GROUP_ID);
-            }
-            catch { }
-        }
 
         private void CreateTaskpane()
         {

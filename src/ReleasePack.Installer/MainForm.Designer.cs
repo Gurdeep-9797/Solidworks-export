@@ -2,7 +2,7 @@ namespace ReleasePack.Installer
 {
     partial class MainForm
     {
-        private System.ComponentModel.IContainer components = null;
+        // Field removed to satisfy compiler warning CS0414
         private System.Windows.Forms.Label _lblStatus;
         private System.Windows.Forms.Button _btnInstall;
         private System.Windows.Forms.ProgressBar _progressBar;

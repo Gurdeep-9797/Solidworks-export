@@ -1,10 +1,11 @@
-name: Build
+name: Native SolidWorks Subsystem Build
 
 on:
   push:
-    branches: [ main ]
+    branches: [ "main", "v2-architecture" ]
   pull_request:
-    branches: [ main ]
+    branches: [ "main", "v2-architecture" ]
+  workflow_dispatch:
 
 jobs:
   build:
@@ -24,6 +25,15 @@ jobs:
     - name: Restore NuGet packages
       run: dotnet restore SolidWorksReleasePack.sln
 
-    - name: Build
+    - name: Build Solution
       run: dotnet build SolidWorksReleasePack.sln --configuration Release --no-restore -p:SkipRegasm=true
-      # SkipRegasm=true — no COM registration on build agents (no SolidWorks installed)
+
+    - name: Upload Build Artifacts
+      uses: actions/upload-artifact@v4
+      with:
+        name: ReleasePack-NativeSubsystem
+        path: |
+          src/ReleasePack.AddIn/bin/Release/net48/*.dll
+          src/ReleasePack.Engine/bin/Release/net48/*.dll
+          src/ReleasePack.Installer/bin/Release/net48/*.exe
+          src/ReleasePack.Installer/bin/Release/*.exe

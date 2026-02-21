@@ -140,9 +140,39 @@ namespace ReleasePack.Engine
         public string DrawingTemplatePath { get; set; }
         public string BomTemplatePath { get; set; }
 
+        // Dimension mode
+        public DimensionMode DimensionMode { get; set; } = DimensionMode.FullAuto;
+
+        // Part numbering prefix (e.g., "PRJ-001")
+        public string ProjectPrefix { get; set; }
+
         // Output folder
         public string OutputFolder { get; set; } // null = auto (next to source file)
         public bool UseCustomFolder { get; set; } = false;
+
+        // Interactive Filtering
+        public HashSet<string> SelectedComponentPaths { get; set; } = new HashSet<string>(System.StringComparer.OrdinalIgnoreCase);
+    }
+
+    /// <summary>
+    /// Controls how dimensions are placed on drawings.
+    /// </summary>
+    public enum DimensionMode
+    {
+        /// <summary>Full topology analysis + hierarchical dimensioning.</summary>
+        FullAuto,
+
+        /// <summary>
+        /// Pull dimensions directly from the 3D model using InsertModelAnnotations3.
+        /// 5-10× faster for large assemblies. Requires dimensions marked "For Drawing" in the model.
+        /// </summary>
+        ModelDimensions,
+
+        /// <summary>
+        /// Insert model dimensions first, then auto-fill any missing annotations.
+        /// Best balance of speed and completeness.
+        /// </summary>
+        HybridAuto
     }
 
     public enum ExportScope

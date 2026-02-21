@@ -1,10 +1,12 @@
 using System;
+using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 using SolidWorks.Interop.sldworks;
+using SolidWorks.Interop.swconst;
 using ReleasePack.Engine;
 
 namespace ReleasePack.AddIn.UI
@@ -51,6 +53,8 @@ namespace ReleasePack.AddIn.UI
         private GroupBox _optionsGroup;
         private ComboBox _cmbSheetSize;
         private ComboBox _cmbViewStandard;
+        private ComboBox _cmbDimMode;
+        private ComboBox _cmbComplexity;
         private TextBox _txtBomTemplate;
         private Button _btnBrowseBom;
 
@@ -61,7 +65,8 @@ namespace ReleasePack.AddIn.UI
         private TextBox _txtCustomFolder;
         private Button _btnBrowseFolder;
 
-        // Generate
+        // Actions
+        private Button _btnPreview;
         private Button _btnGenerate;
         private ProgressBar _progressBar;
         private Label _lblStatus;
@@ -94,7 +99,8 @@ namespace ReleasePack.AddIn.UI
         private void InitializeUI()
         {
             this.SuspendLayout();
-            this.BackColor = Color.FromArgb(245, 247, 250);
+            // Match SolidWorks PropertyManager native background
+            this.BackColor = Color.FromArgb(240, 240, 240);
             this.AutoScroll = true;
             this.Dock = DockStyle.Fill;
             this.Font = new Font("Segoe UI", 9F);
@@ -105,15 +111,16 @@ namespace ReleasePack.AddIn.UI
             _headerPanel = new Panel
             {
                 Dock = DockStyle.Top,
-                Height = 52,
-                BackColor = Color.FromArgb(27, 58, 92)
+                Height = 40,
+                BackColor = Color.FromArgb(0, 122, 204), // SolidWorks/VS Accent Blue
+                Padding = new Padding(10, 0, 0, 0)
             };
 
             _titleLabel = new Label
             {
-                Text = "⚡ Release Pack Generator",
+                Text = "Release Pack Studio",
                 ForeColor = Color.White,
-                Font = new Font("Segoe UI Semibold", 13F),
+                Font = new Font("Segoe UI", 11F, FontStyle.Bold),
                 Dock = DockStyle.Fill,
                 TextAlign = ContentAlignment.MiddleCenter
             };
@@ -236,16 +243,20 @@ namespace ReleasePack.AddIn.UI
             {
                 Location = new Point(12, 90),
                 Size = new Size(180, 23),
-                Enabled = false
+                Enabled = false,
+                BorderStyle = BorderStyle.FixedSingle
             };
 
             _btnBrowse = new Button
             {
                 Text = "...",
                 Location = new Point(196, 89),
-                Size = new Size(32, 25),
-                Enabled = false
+                Size = new Size(32, 23),
+                Enabled = false,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(245, 245, 245)
             };
+            _btnBrowse.FlatAppearance.BorderColor = Color.FromArgb(200, 200, 200);
             _btnBrowse.Click += BtnBrowseFile_Click;
 
             _scopeGroup.Controls.AddRange(new Control[]
@@ -270,7 +281,7 @@ namespace ReleasePack.AddIn.UI
 
             // ── Options ─────────────────────────────────
             y = 274;
-            _optionsGroup = CreateGroupBox("Drawing Options", y, 80);
+            _optionsGroup = CreateGroupBox("Drawing Options", y, 170);
 
             var lblSheet = new Label { Text = "Sheet Size:", Location = new Point(12, 24), Size = new Size(70, 20) };
             _cmbSheetSize = new ComboBox
@@ -292,16 +303,36 @@ namespace ReleasePack.AddIn.UI
             _cmbViewStandard.Items.AddRange(new[] { "3rd Angle (ANSI)", "1st Angle (ISO)" });
             _cmbViewStandard.SelectedIndex = 0;
 
-            var lblBom = new Label { Text = "BOM Tpl:", Location = new Point(12, 80), Size = new Size(60, 20) };
-            _txtBomTemplate = new TextBox { Location = new Point(75, 78), Size = new Size(120, 23) };
-            _btnBrowseBom = new Button { Text = "...", Location = new Point(200, 77), Size = new Size(25, 25) };
+            var lblDimMode = new Label { Text = "Dim Mode:", Location = new Point(12, 80), Size = new Size(65, 20) };
+            _cmbDimMode = new ComboBox
+            {
+                Location = new Point(80, 78),
+                Size = new Size(145, 23),
+                DropDownStyle = ComboBoxStyle.DropDownList
+            };
+            _cmbDimMode.Items.AddRange(new[] { "Full Auto", "Model Dimensions", "Hybrid Auto" });
+            _cmbDimMode.SelectedIndex = 0;
+
+            var lblBom = new Label { Text = "BOM Tpl:", Location = new Point(12, 108), Size = new Size(60, 20) };
+            _txtBomTemplate = new TextBox { Location = new Point(75, 106), Size = new Size(115, 23) };
+            _btnBrowseBom = new Button { Text = "...", Location = new Point(195, 105), Size = new Size(25, 25) };
             _btnBrowseBom.Click += BtnBrowseBom_Click;
 
-            _optionsGroup.Controls.AddRange(new Control[] { lblSheet, _cmbSheetSize, lblStd, _cmbViewStandard, lblBom, _txtBomTemplate, _btnBrowseBom });
+            var lblComplexity = new Label { Text = "Complexity:", Location = new Point(12, 136), Size = new Size(65, 20) };
+            _cmbComplexity = new ComboBox
+            {
+                Location = new Point(80, 134),
+                Size = new Size(140, 23),
+                DropDownStyle = ComboBoxStyle.DropDownList
+            };
+            _cmbComplexity.Items.AddRange(new[] { "Simple", "Moderate", "High-Density" });
+            _cmbComplexity.SelectedIndex = 1;
+
+            _optionsGroup.Controls.AddRange(new Control[] { lblSheet, _cmbSheetSize, lblStd, _cmbViewStandard, lblDimMode, _cmbDimMode, lblBom, _txtBomTemplate, _btnBrowseBom, lblComplexity, _cmbComplexity });
             contentPanel.Controls.Add(_optionsGroup);
 
             // ── Output Folder ───────────────────────────
-            y = 400;
+            y = 455;
             _folderGroup = CreateGroupBox("Save Location", y, 90);
 
             _rbFolderAuto = new RadioButton
@@ -327,40 +358,62 @@ namespace ReleasePack.AddIn.UI
             {
                 Location = new Point(12, 66),
                 Size = new Size(180, 23),
-                Enabled = false
+                Enabled = false,
+                BorderStyle = BorderStyle.FixedSingle
             };
             _btnBrowseFolder = new Button
             {
                 Text = "...",
                 Location = new Point(196, 65),
-                Size = new Size(32, 25),
-                Enabled = false
+                Size = new Size(32, 23),
+                Enabled = false,
+                FlatStyle = FlatStyle.Flat,
+                BackColor = Color.FromArgb(245, 245, 245)
             };
+            _btnBrowseFolder.FlatAppearance.BorderColor = Color.FromArgb(200, 200, 200);
             _btnBrowseFolder.Click += BtnBrowseFolder_Click;
 
             _folderGroup.Controls.AddRange(new Control[]
                 { _rbFolderAuto, _rbFolderCustom, _txtCustomFolder, _btnBrowseFolder });
             contentPanel.Controls.Add(_folderGroup);
 
-            // ── Generate Button ─────────────────────────
-            y = 500;
+            // ── Generate & Preview Buttons ─────────────────────────
+            y = 555;
+            
+            _btnPreview = new Button
+            {
+                Text = "Preview Layout",
+                Location = new Point(8, y),
+                Size = new Size(110, 36),
+                BackColor = Color.FromArgb(240, 240, 240),
+                ForeColor = Color.Black,
+                FlatStyle = FlatStyle.Flat,
+                Font = new Font("Segoe UI Semibold", 9F),
+                Cursor = Cursors.Hand
+            };
+            _btnPreview.FlatAppearance.BorderColor = Color.FromArgb(200, 200, 200);
+            
             _btnGenerate = new Button
             {
-                Text = "⚡ GENERATE RELEASE PACK",
-                Location = new Point(8, y),
-                Size = new Size(232, 40),
-                BackColor = Color.FromArgb(44, 95, 138),
+                Text = "Generate Tasks",
+                Location = new Point(126, y),
+                Size = new Size(114, 36),
+                BackColor = Color.FromArgb(0, 122, 204), // Native Action Blue
                 ForeColor = Color.White,
                 FlatStyle = FlatStyle.Flat,
-                Font = new Font("Segoe UI Semibold", 11F),
+                Font = new Font("Segoe UI Semibold", 9F),
                 Cursor = Cursors.Hand
             };
             _btnGenerate.FlatAppearance.BorderSize = 0;
+            _btnGenerate.FlatAppearance.MouseOverBackColor = Color.FromArgb(28, 151, 234);
+            _btnGenerate.FlatAppearance.MouseDownBackColor = Color.FromArgb(0, 90, 158);
             _btnGenerate.Click += BtnGenerate_Click;
+            
+            contentPanel.Controls.Add(_btnPreview);
             contentPanel.Controls.Add(_btnGenerate);
 
             // ── Progress Bar ────────────────────────────
-            y = 548;
+            y = 600;
             _progressBar = new ProgressBar
             {
                 Location = new Point(8, y),
@@ -370,7 +423,7 @@ namespace ReleasePack.AddIn.UI
             contentPanel.Controls.Add(_progressBar);
 
             // ── Log Box ─────────────────────────────────
-            y = 570;
+            y = 622;
             _logBox = new RichTextBox
             {
                 Location = new Point(8, y),
@@ -396,8 +449,8 @@ namespace ReleasePack.AddIn.UI
                 Text = title,
                 Location = new Point(8, y),
                 Size = new Size(232, height),
-                Font = new Font("Segoe UI Semibold", 9F),
-                ForeColor = Color.FromArgb(27, 58, 92)
+                Font = new Font("Segoe UI", 9F, FontStyle.Bold),
+                ForeColor = Color.FromArgb(64, 64, 64)
             };
         }
 
@@ -409,8 +462,8 @@ namespace ReleasePack.AddIn.UI
                 Location = new Point(x, y),
                 Size = new Size(115, 20),
                 Checked = isChecked,
-                Font = new Font("Segoe UI", 8.5F),
-                ForeColor = Color.FromArgb(50, 55, 65)
+                Font = new Font("Segoe UI", 9F),
+                ForeColor = Color.Black
             };
         }
 
@@ -476,6 +529,67 @@ namespace ReleasePack.AddIn.UI
             // Build options
             var options = BuildOptions();
 
+            // ── Interactive Selection Check ──
+            if (!_rbRemote.Checked && _swApp.ActiveDoc != null)
+            {
+                var dict = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+                ModelDoc2 doc = (ModelDoc2)_swApp.ActiveDoc;
+                SelectionMgr selMgr = (SelectionMgr)doc.SelectionManager;
+                
+                if (selMgr != null && selMgr.GetSelectedObjectCount2(-1) > 0)
+                {
+                    for (int i = 1; i <= selMgr.GetSelectedObjectCount2(-1); i++)
+                    {
+                        int type = selMgr.GetSelectedObjectType3(i, -1);
+                        if (type == (int)swSelectType_e.swSelCOMPONENTS)
+                        {
+                            Component2 comp = (Component2)selMgr.GetSelectedObjectsComponent4(i, -1);
+                            if (comp != null)
+                            {
+                                string path = comp.GetPathName();
+                                if (!string.IsNullOrEmpty(path))
+                                    dict.Add(path);
+                            }
+                        }
+                        else 
+                        {
+                            // If user selected faces/edges, try to get the component they belong to
+                            Component2 comp = (Component2)selMgr.GetSelectedObjectsComponent4(i, -1);
+                            if (comp != null)
+                            {
+                                string path = comp.GetPathName();
+                                if (!string.IsNullOrEmpty(path))
+                                    dict.Add(path);
+                            }
+                            else if (doc.GetType() == (int)swDocumentTypes_e.swDocPART)
+                            {
+                                // If inside a part document and body/face is selected, assume they want just this part
+                                dict.Add(doc.GetPathName());
+                            }
+                        }
+                    }
+
+                    if (dict.Count > 0)
+                    {
+                        var result = MessageBox.Show(
+                            $"You have {dict.Count} specific component(s) selected in the model.\n\n" +
+                            "Would you like to generate the Release Pack ONLY for the selected components?\n\n" +
+                            "• 'Yes': Export only selections\n" +
+                            "• 'No': Export the entire assembly",
+                            "Selective Export", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Question);
+
+                        if (result == DialogResult.Cancel)
+                        {
+                            return; // Abort entirely
+                        }
+                        else if (result == DialogResult.Yes)
+                        {
+                            options.SelectedComponentPaths = dict;
+                        }
+                    }
+                }
+            }
+
             // Disable UI
             _btnGenerate.Enabled = false;
             _btnGenerate.Text = "⏳ Generating...";
@@ -517,7 +631,7 @@ namespace ReleasePack.AddIn.UI
             finally
             {
                 _btnGenerate.Enabled = true;
-                _btnGenerate.Text = "⚡ GENERATE RELEASE PACK";
+                _btnGenerate.Text = "Generate Tasks";
             }
         }
 
@@ -552,6 +666,9 @@ namespace ReleasePack.AddIn.UI
                 // Drawing options
                 SheetSize = MapSheetSize(_cmbSheetSize.SelectedIndex),
                 ViewStandard = _cmbViewStandard.SelectedIndex == 0 ? ViewStandard.ThirdAngle : ViewStandard.FirstAngle,
+                DimensionMode = _cmbDimMode.SelectedIndex == 1 ? DimensionMode.ModelDimensions :
+                                _cmbDimMode.SelectedIndex == 2 ? DimensionMode.HybridAuto :
+                                DimensionMode.FullAuto,
                 BomTemplatePath = _txtBomTemplate.Text,
 
                 // Folder

@@ -7,6 +7,8 @@
     <RootNamespace>ReleasePack.AddIn</RootNamespace>
     <LangVersion>latest</LangVersion>
     <RegisterForComInterop>false</RegisterForComInterop>
+    <SignAssembly>true</SignAssembly>
+    <AssemblyOriginatorKeyFile>ReleasePackKey.snk</AssemblyOriginatorKeyFile>
   </PropertyGroup>
 
   <!-- Post-build: register with /codebase (required for SolidWorks add-ins per codestack.net).
@@ -19,6 +21,7 @@
   <ItemGroup>
     <Reference Include="System.Drawing" />
     <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Web.Extensions" />
   </ItemGroup>
 
   <ItemGroup>

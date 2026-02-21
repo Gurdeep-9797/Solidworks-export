@@ -52,7 +52,23 @@ namespace ReleasePack.Engine
 
                 // Flatten to unique file list
                 List<ModelNode> allNodes = DependencyScanner.Flatten(worktree);
-                _progress?.LogMessage($"Found {allNodes.Count} unique model(s) in worktree.");
+                
+                // ── Interactive Selection Filter ──
+                if (options.SelectedComponentPaths != null && options.SelectedComponentPaths.Count > 0)
+                {
+                    allNodes = allNodes.Where(n => options.SelectedComponentPaths.Contains(n.FilePath)).ToList();
+                    _progress?.LogMessage($"Selective Export: Filtered down to {allNodes.Count} selected component(s).");
+                }
+                else
+                {
+                    _progress?.LogMessage($"Found {allNodes.Count} unique model(s) in worktree.");
+                }
+
+                if (allNodes.Count == 0)
+                {
+                    _progress?.LogMessage("No components matched the selection. Aborting.");
+                    return results;
+                }
 
                 // ── Step 2: Determine output folder ───────────────
                 string outputFolder = DetermineOutputFolder(options, worktree[0]);
