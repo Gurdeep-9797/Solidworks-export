@@ -33,14 +33,14 @@ namespace ReleasePack.Engine.Annotations
             bOptions.Style = (int)swBalloonStyle_e.swBS_Circular; // Start generic
             bOptions.Size = (int)swBalloonFit_e.swBF_2Chars;
             bOptions.UpperTextContent = (int)swBalloonTextContent_e.swBalloonTextItemNumber;
-            bOptions.Placement = (int)swDetailingBalloonLayout_e.swDetailingBalloonLayout_Square;
 
-            var resultBalloons = assemblyView.AutoBalloon5(bOptions);
+            dynamic dynView = assemblyView;
+            var resultBalloons = dynView.AutoBalloon5(bOptions);
             
             if (resultBalloons == null) return;
 
             // 2. Iterate and enforce digit-length shape logic + Layer assignment
-            INote note = assemblyView.GetFirstNote();
+            INote note = (INote)assemblyView.GetFirstNote();
             while (note != null)
             {
                 if (note.IsBomBalloon())
@@ -66,13 +66,15 @@ namespace ReleasePack.Engine.Annotations
                     }
 
                     // Push to the BOM layer
-                    IAnnotation ann = note.GetAnnotation();
+                    IAnnotation ann = (IAnnotation)note.GetAnnotation();
                     if (ann != null)
                     {
-                        Layout.LayerManager.PushToLayer(ann, Layout.LayerManager.LAYER_BOM);
+                        // Dynamic dispatch for pushing to layer since Annotation vs IAnnotation differs between V27 headers
+                        dynamic dynAnn = ann;
+                        Layout.LayerManager.PushToLayer(dynAnn, Layout.LayerManager.LAYER_BOM);
                     }
                 }
-                note = note.GetNext();
+                note = (INote)note.GetNext();
             }
         }
 

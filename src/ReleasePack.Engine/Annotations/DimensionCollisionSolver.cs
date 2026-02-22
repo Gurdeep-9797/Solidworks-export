@@ -66,11 +66,12 @@ namespace ReleasePack.Engine.Annotations
             IDisplayDimension swDispDim = swView.GetFirstDisplayDimension5();
             while (swDispDim != null)
             {
-                IAnnotation swAnn = swDispDim.GetAnnotation();
+                IAnnotation swAnn = (IAnnotation)swDispDim.GetAnnotation();
                 if (swAnn != null)
                 {
+                    dynamic dynAnn = swAnn;
                     // [0]=Left, [1]=Top, [2]=Right, [3]=Bottom, [4]=Z
-                    double[] extent = (double[])swAnn.GetExtent();
+                    double[] extent = (double[])dynAnn.GetExtent();
                     if (extent != null && extent.Length >= 4)
                     {
                         // Note: SW Y-axis points UP in paper space, but Top/Bottom logic varies.
@@ -119,8 +120,9 @@ namespace ReleasePack.Engine.Annotations
             Rect2D geometry, 
             List<Rect2D> obstacles)
         {
+            dynamic dynAnn = ann;
             // Current text position center in Paper Space
-            double[] pos = (double[])ann.GetPosition();
+            double[] pos = (double[])dynAnn.GetPosition();
             if (pos == null) return txtBox; // Fallback if API fails
 
             double cx = pos[0];
@@ -158,7 +160,7 @@ namespace ReleasePack.Engine.Annotations
             }
 
             // Commit position
-            ann.SetPosition(cx, cy, cz);
+            dynAnn.SetPosition(cx, cy, cz);
             return currentBox;
         }
     }

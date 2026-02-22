@@ -51,8 +51,9 @@ namespace ReleasePack.Engine
             // 2. Center Marks & Centerlines on ALL views
             InsertCenterMarks(drawing);
 
-            // 3. Smart Auto-Dimensioning (API-based baseline)
-            SmartAutoDimension(drawing);
+            // 3. V3 Deterministic Feature-Based Dimensioning 
+            var dimensioner = new Annotations.HierarchicalDimensioner(_swApp, _progress);
+            dimensioner.ApplyDeterministicDimensions(drawing, features);
 
             // 4. Feature-specific annotations
             if (features != null)
@@ -277,51 +278,7 @@ namespace ReleasePack.Engine
             return false;
         }
 
-        // ======================================================================
-        // 3. Smart Auto-Dimensioning
-        // ======================================================================
-
-        private void SmartAutoDimension(DrawingDoc drawing)
-        {
-            try
-            {
-                _progress?.LogMessage("Running Smart Auto-Dimensioning (baseline scheme)...");
-
-                object[] views = (object[])drawing.GetViews();
-                if (views == null) return;
-
-                foreach (object viewObj in views)
-                {
-                    View view = (View)viewObj;
-                    if (view == null) continue;
-                    if (IsSheetOrIsoView(view)) continue;
-
-                    // Select the view
-                    bool selected = ((ModelDoc2)drawing).Extension.SelectByID2(
-                        view.Name, "DRAWINGVIEW", 0, 0, 0, false, 0, null, 0);
-                    if (!selected) continue;
-
-                    // AutoDimension with baseline scheme
-                    // 2 = swAutodimEntitiesSelectedView (may be missing in older interop)
-                    int status = drawing.AutoDimension(
-                        2,
-                        (int)swAutodimScheme_e.swAutodimSchemeBaseline,
-                        (int)swAutodimHorizontalPlacement_e.swAutodimHorizontalPlacementBelow,
-                        (int)swAutodimScheme_e.swAutodimSchemeBaseline,
-                        (int)swAutodimVerticalPlacement_e.swAutodimVerticalPlacementLeft
-                    );
-
-                    if (status != 0)
-                        _progress?.LogMessage($"AutoDimension returned status {status} for view '{view.Name}'");
-                }
-
-                _progress?.LogMessage("Auto-dimensioning complete.");
-            }
-            catch (Exception ex)
-            {
-                _progress?.LogWarning($"SmartAutoDimension failed: {ex.Message}");
-            }
-        }
+        // V3 Removes reliance on SmartAutoDimension. See Annotations/HierarchicalDimensioner.cs instead.
 
         // ======================================================================
         // 4. Pattern Labels

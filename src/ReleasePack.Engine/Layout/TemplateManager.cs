@@ -56,7 +56,7 @@ namespace ReleasePack.Engine.Layout
         /// Given the bounding box of a model, calculates the required footprint to safely house
         /// a standard 3-View + Isometric layout, and selects the optimal sheet + valid ISO scale.
         /// </summary>
-        public (StandardSheet BestSheet, double ScaleRatio) ComputeOptimalLayout(double[] boundingBox)
+        public (StandardSheet BestSheet, double ScaleRatio) ComputeOptimalLayout(double[] boundingBox, bool needTop = true, bool needRight = true, bool needIso = true)
         {
             if (boundingBox == null || boundingBox.Length < 6)
                 return (ISO_SHEETS[1], 1.0/5.0); // Fallback: A3 @ 1:5
@@ -67,17 +67,37 @@ namespace ReleasePack.Engine.Layout
             double dz = Math.Abs(boundingBox[5] - boundingBox[2]);
 
             // Model Space Projection Footprint
-            // Typical 3-view arrangement requires horizontal space = FRONT_W + RIGHT_W + spacing
-            // vertical space = FRONT_H + TOP_H + spacing
-            
-            // X-axis dimension is typically max(dx, dy, dz), but let's assume worst-case orientations:
             double frontWidth = dx;
             double frontHeight = dy;
             double topHeight = dz;
             double rightWidth = dz;
             
-            double modelSpaceWidth = frontWidth + rightWidth + 0.050; // Add 50mm padding equivalent in model space
-            double modelSpaceHeight = frontHeight + topHeight + 0.050;
+            // Start with Front view base requirement
+            double modelSpaceWidth = frontWidth;
+            double modelSpaceHeight = frontHeight;
+
+            // Add Right view footprint if needed
+            if (needRight)
+                modelSpaceWidth += rightWidth + 0.050; // 50mm padding
+
+            // Add Top view footprint if needed
+            if (needTop)
+                modelSpaceHeight += topHeight + 0.050;
+
+            // Add ISO view footprint estimation if needed
+            if (needIso)
+            {
+                double isoDiag = Math.Sqrt((dx*dx) + (dy*dy) + (dz*dz));
+                // Add ISO footprint to either width or height depending on aspect ratio to guarantee fit
+                if (modelSpaceWidth > modelSpaceHeight)
+                    modelSpaceHeight += isoDiag;
+                else
+                    modelSpaceWidth += isoDiag;
+            }
+
+            // Always add a baseline 30mm margin padding for general safe space
+            modelSpaceWidth += 0.030;
+            modelSpaceHeight += 0.030;
 
             // Iterate through sheets from smallest to largest
             foreach (var sheet in ISO_SHEETS)
@@ -135,7 +155,7 @@ namespace ReleasePack.Engine.Layout
             double[] fraction = ConvertDecimalToFraction(isoScale);
             
             bool success = drawing.SetupSheet5(
-                drawing.GetCurrentSheet().GetName(),
+                ((Sheet)drawing.GetCurrentSheet()).GetName(),
                 sheet.SwPaperSize,
                 (int)swDwgTemplates_e.swDwgTemplateNone, // We use custom background formatting, ignore SW default
                 fraction[0], fraction[1], // Scale numerator : denominator

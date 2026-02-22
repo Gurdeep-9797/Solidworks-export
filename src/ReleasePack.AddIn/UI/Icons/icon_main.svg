@@ -1,0 +1,20 @@
+﻿<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32">
+  <defs>
+    <linearGradient id="swBlueGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#2D8CFF"/>
+      <stop offset="100%" stop-color="#0052CC"/>
+    </linearGradient>
+  </defs>
+  <!-- Base box isometric -->
+  <polygon points="16,2 30,8 16,14 2,8" fill="url(#swBlueGradient)"/>
+  <polygon points="2,8 16,14 16,30 2,24" fill="#003D99"/>
+  <polygon points="30,8 16,14 16,30 30,24" fill="#0052CC"/>
+  <!-- Print/Export Sheet Overlay -->
+  <rect x="5" y="10" width="12" height="15" fill="#FFFFFF" rx="1"/>
+  <line x1="7" y1="13" x2="15" y2="13" stroke="#0052CC" stroke-width="1.5"/>
+  <line x1="7" y1="17" x2="13" y2="17" stroke="#0052CC" stroke-width="1.5"/>
+  <line x1="7" y1="21" x2="15" y2="21" stroke="#0052CC" stroke-width="1.5"/>
+  <!-- Green checkmark badge -->
+  <circle cx="22" cy="22" r="6" fill="#00C853"/>
+  <path d="M19,22 L21,24 L25,19" fill="none" stroke="#FFFFFF" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

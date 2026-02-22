@@ -76,18 +76,24 @@ namespace ReleasePack.Engine
 
                 _progress?.LogMessage($"Model bounds: {modelW * 1000:F1} × {modelH * 1000:F1} × {modelD * 1000:F1} mm");
 
-                // 2. Determine sheet size
-                var sheetSize = DetermineSheetSize(modelW, modelH, modelD, options.SheetSize);
-                var (sheetW, sheetH, swPaperEnum) = SheetSizes[sheetSize];
+                // 2. V3: Analyze features FIRST (drives view selection)
+                List<AnalyzedFeature> features = _featureAnalyzer.Analyze(modelDoc);
+                System.Windows.Forms.Application.DoEvents();
 
-                _progress?.LogMessage($"Sheet size: {sheetSize} ({sheetW * 1000:F0}×{sheetH * 1000:F0}mm)");
+                // 3. V3: Smart View Planning (decides which views are needed)
+                var viewPlan = ViewPlanner.Plan(features, modelW, modelH, modelD);
+                _progress?.LogMessage($"View Plan: {viewPlan.Summary}");
 
-                // 3. Calculate scale to fit all four views
-                double scale = CalculateScale(modelW, modelH, modelD, sheetW, sheetH);
+                // 4. V3: Calculate mathematically optimal sheet size & scale based on actual required views
+                var templateManager = new ReleasePack.Engine.Layout.TemplateManager(_swApp);
+                var (bestSheet, isoScale) = templateManager.ComputeOptimalLayout(
+                    bbox, viewPlan.NeedTopView, viewPlan.NeedRightView, viewPlan.NeedIsoView);
+                
+                _progress?.LogMessage($"V3 Layout Engine: Selected {bestSheet.Name} at 1:{1/isoScale}");
 
-                // 4. Create drawing document
+                // 5. Create drawing document
                 string templatePath = GetDrawingTemplatePath(options);
-                DrawingDoc drawing = CreateDrawingDocument(templatePath, swPaperEnum, sheetW, sheetH);
+                DrawingDoc drawing = CreateDrawingDocument(templatePath, bestSheet.SwPaperSize, bestSheet.Width, bestSheet.Height);
 
                 if (drawing == null)
                 {
@@ -97,41 +103,59 @@ namespace ReleasePack.Engine
 
                 ModelDoc2 drawingDoc = (ModelDoc2)drawing;
 
-                // 5. Analyze features FIRST (drives view selection)
-                List<AnalyzedFeature> features = _featureAnalyzer.Analyze(modelDoc);
+                // 6. Lock sheet scale
+                templateManager.ApplyTemplateToDrawing(drawing, bestSheet, isoScale);
+
+                // 7. Calculate View Envelopes safely without overlap
+                bool isAnsi = options.ViewStandard == ViewStandard.ThirdAngle;
+                var binSolver = new ReleasePack.Engine.Layout.BinPackingSolver(isAnsi);
+                var solvedLayout = binSolver.SolveStandardLayout(
+                    bbox, isoScale, bestSheet, 
+                    viewPlan.NeedTopView, viewPlan.NeedRightView, viewPlan.NeedIsoView);
+                
+                if (solvedLayout == null)
+                {
+                    _progress?.LogWarning("V3 Strict Layout Warning: Views marginally exceed paper boundaries. Attempting safety scale reduction.");
+                    // Fallback to next lowest scale if overlaps breach (Simple mitigation)
+                    isoScale = ReleasePack.Engine.Layout.TemplateManager.GetValidISO5455Scale(isoScale * 0.9);
+                    templateManager.ApplyTemplateToDrawing(drawing, bestSheet, isoScale);
+                    solvedLayout = binSolver.SolveStandardLayout(
+                        bbox, isoScale, bestSheet, 
+                        viewPlan.NeedTopView, viewPlan.NeedRightView, viewPlan.NeedIsoView);
+                }
+
+                // 8. Place actual drawing views using determined safe zones
+                if (solvedLayout != null)
+                {
+                    PlaceStandardViewsV3(drawing, node.FilePath, solvedLayout);
+                }
+                else
+                {
+                    _progress?.LogError("CRITICAL: Layout generation breached sheet constraints entirely. Cannot guarantee non-overlapped output.");
+                }
                 System.Windows.Forms.Application.DoEvents();
 
-                // 6. Smart View Planning (decides which views are needed)
-                var viewPlan = ViewPlanner.Plan(features, modelW, modelH, modelD);
-                _progress?.LogMessage($"View Plan: {viewPlan.Summary}");
-
-                // 7. Place views according to plan & projection standard
-                PlaceStandardViews(drawing, node.FilePath, sheetW, sheetH, 
-                    modelW, modelH, modelD, options.ViewStandard,
-                    viewPlan.NeedTopView, viewPlan.NeedRightView);
-                System.Windows.Forms.Application.DoEvents();
-
-                // 8. Add section view if needed
+                // 9. Add section view if needed
                 if (viewPlan.NeedSectionView)
                 {
                     _progress?.LogMessage("Internal features detected → adding section view.");
-                    AddSectionView(drawing, sheetW, sheetH);
+                    AddSectionView(drawing, bestSheet.Width, bestSheet.Height);
                     System.Windows.Forms.Application.DoEvents();
                 }
 
-                // 9. Add detail views for small features
+                // 10. Add detail views for small features
                 if (viewPlan.NeedDetailViews)
                 {
                     _progress?.LogMessage($"Small features detected → adding {viewPlan.DetailFeatures.Count} detail view(s).");
-                    AddDetailView(drawing, viewPlan.DetailFeatures, sheetW, sheetH);
+                    AddDetailView(drawing, viewPlan.DetailFeatures, bestSheet.Width, bestSheet.Height);
                     System.Windows.Forms.Application.DoEvents();
                 }
 
-                // 10. Apply full annotation pipeline (center marks, dims, callouts, TYP notes)
+                // 11. Apply full annotation pipeline (center marks, dims, callouts, TYP notes)
                 _dimensionEngine.ApplyDimensions(drawing, features);
                 System.Windows.Forms.Application.DoEvents();
 
-                // 11. Assembly BOM & Balloons
+                // 12. Assembly BOM & Balloons
                 View isoView = GetIsoView(drawing);
                 if (isoView != null)
                 {
@@ -139,13 +163,13 @@ namespace ReleasePack.Engine
                     System.Windows.Forms.Application.DoEvents();
                 }
 
-                // 12. Populate Title Block (Metadata)
+                // 13. Populate Title Block (Metadata)
                 PopulateTitleBlock(drawing, node, options);
 
-                // 13. Force rebuild to ensure all annotations are current
+                // 14. Force rebuild to ensure all annotations are current
                 drawingDoc.ForceRebuild3(false);
 
-                // 14. Save Drawing
+                // 15. Save Drawing
                 string drawingPath = GetOutputPath(node, outputDir, ".slddrw");
                 SaveDrawing(drawingDoc, drawingPath);
 
@@ -159,125 +183,36 @@ namespace ReleasePack.Engine
             }
         }
 
-        /// <summary>
-        /// Determine the smallest sheet size that fits the model with all four views.
-        /// </summary>
-        private SheetSizeOption DetermineSheetSize(double w, double h, double d, SheetSizeOption userChoice)
+        private void PlaceStandardViewsV3(DrawingDoc drawing, string modelPath, Dictionary<string, ReleasePack.Engine.Layout.BinPackingSolver.ViewEnvelope> layout)
         {
-            if (userChoice != SheetSizeOption.Auto)
-                return userChoice;
+            var solver = new ReleasePack.Engine.Layout.BinPackingSolver();
 
-            // Estimate space needed for 4 views:
-            // Front (w×h), Top (w×d), Right (d×h), ISO (~1.2*max)
-            // Layout: Front center-left, Top above, Right to the right, ISO top-right
-            double neededWidth = w + d + VIEW_GAP * 3 + MARGIN * 2;
-            double neededHeight = h + d + VIEW_GAP * 3 + MARGIN * 2;
-
-            // Scale factor ~1.0 ideal, so check which sheet fits at scale >= 1:2
-            foreach (var size in new[] {
-                SheetSizeOption.A4_Landscape,
-                SheetSizeOption.A3_Landscape,
-                SheetSizeOption.A2_Landscape,
-                SheetSizeOption.A1_Landscape,
-                SheetSizeOption.A0_Landscape })
+            if (layout.ContainsKey("FRONT"))
             {
-                var (sw, sh, _) = SheetSizes[size];
-                double usableW = sw - MARGIN * 2;
-                double usableH = sh - MARGIN * 2;
-
-                // Check if views fit at 1:2 scale (minimum acceptable)
-                if (neededWidth * 0.5 <= usableW && neededHeight * 0.5 <= usableH)
-                    return size;
+                View frontView = (View)drawing.CreateDrawViewFromModelView3(modelPath, "*Front", 0, 0, 0);
+                if (frontView != null) solver.CommitView(frontView, layout["FRONT"]);
             }
 
-            return SheetSizeOption.A0_Landscape; // Fallback to largest
-        }
-
-        /// <summary>
-        /// Calculate the best display scale for the drawing.
-        /// </summary>
-        private double CalculateScale(double modelW, double modelH, double modelD,
-                                       double sheetW, double sheetH)
-        {
-            double usableW = sheetW - MARGIN * 2;
-            double usableH = sheetH - MARGIN * 2;
-
-            double neededW = modelW + modelD + VIEW_GAP * 3;
-            double neededH = modelH + modelD + VIEW_GAP * 3;
-
-            double scaleW = usableW / neededW;
-            double scaleH = usableH / neededH;
-            double rawScale = Math.Min(scaleW, scaleH);
-
-            // Snap to standard scale values
-            double[] standardScales = { 0.1, 0.2, 0.25, 0.5, 1.0, 2.0, 2.5, 5.0, 10.0 };
-            double bestScale = standardScales
-                .Where(s => s <= rawScale)
-                .DefaultIfEmpty(0.1)
-                .Max();
-
-            return bestScale;
-        }
-
-        /// <summary>
-        /// Place the standard projection views on the sheet using LayoutEngine.
-        /// Supports both 1st Angle (ISO) and 3rd Angle (ANSI) projection.
-        /// </summary>
-        private void PlaceStandardViews(DrawingDoc drawing, string modelPath,
-            double sheetW, double sheetH,
-            double modelW, double modelH, double modelD,
-            ViewStandard standard = ViewStandard.ThirdAngle,
-            bool includeTop = true, bool includeRight = true)
-        {
-            string projName = standard == ViewStandard.ThirdAngle ? "3rd Angle (ANSI)" : "1st Angle (ISO)";
-            _progress?.LogMessage($"Calculating view layout ({projName})...");
-
-            var layoutEngine = new ViewLayoutEngine();
-            var layout = layoutEngine.CalculateLayout(
-                sheetW, sheetH, modelW, modelH, modelD,
-                standard, includeTop, includeRight);
-
-            _progress?.LogMessage($"Layout: Scale 1:{1/layout.Scale:F1}, " +
-                $"Views: Front{(includeTop ? "+Top" : "")}{(includeRight ? "+Right" : "")}+Iso");
-
-            try
+            if (layout.ContainsKey("TOP"))
             {
-                // Front View (always present)
-                View frontView = (View)drawing.CreateDrawViewFromModelView3(
-                    modelPath, "*Front", layout.FrontX, layout.FrontY, 0);
-                if (frontView != null) frontView.ScaleRatio = new double[] { layout.Scale, 1.0 };
-
-                // Top View (optional per ViewPlanner)
-                if (includeTop)
-                {
-                    View topView = (View)drawing.CreateDrawViewFromModelView3(
-                        modelPath, "*Top", layout.TopX, layout.TopY, 0);
-                    if (topView != null) topView.ScaleRatio = new double[] { layout.Scale, 1.0 };
-                }
-
-                // Right View (optional per ViewPlanner)
-                if (includeRight)
-                {
-                    // For 1st Angle: "Right" projection goes to the LEFT of Front.
-                    // The layout engine handles positioning, so we still use *Right orientation.
-                    // For 1st Angle, we could use *Left instead since it shows
-                    // the view "as projected through the object". However, SolidWorks
-                    // handles this in projection mode — the view name is the same.
-                    View rightView = (View)drawing.CreateDrawViewFromModelView3(
-                        modelPath, "*Right", layout.RightX, layout.RightY, 0);
-                    if (rightView != null) rightView.ScaleRatio = new double[] { layout.Scale, 1.0 };
-                }
-
-                // Isometric View (always, slightly smaller)
-                View isoView = (View)drawing.CreateDrawViewFromModelView3(
-                    modelPath, "*Isometric", layout.IsoX, layout.IsoY, 0);
-                if (isoView != null) isoView.ScaleRatio = new double[] { layout.Scale * 0.75, 1.0 };
+                View topView = (View)drawing.CreateDrawViewFromModelView3(modelPath, "*Top", 0, 0, 0);
+                if (topView != null) solver.CommitView(topView, layout["TOP"]);
             }
-            catch (Exception ex)
+
+            if (layout.ContainsKey("RIGHT"))
             {
-                _progress?.LogWarning($"View placement failed: {ex.Message}");
+                View rightView = (View)drawing.CreateDrawViewFromModelView3(modelPath, "*Right", 0, 0, 0);
+                if (rightView != null) solver.CommitView(rightView, layout["RIGHT"]);
+            }
+
+            if (layout.ContainsKey("ISO"))
+            {
+                View isoView = (View)drawing.CreateDrawViewFromModelView3(modelPath, "*Isometric", 0, 0, 0);
+                if (isoView != null) solver.CommitView(isoView, layout["ISO"]);
             }
         }
+
+        // V1 Dynamic Template Calculation Engine Deprecated - V3 Uses explicit layout footprint sizing using TemplateManager
 
         /// <summary>
         /// Add isometric view in the top-right area of the sheet.

@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using SolidWorks.Interop.sldworks;
+using SolidWorks.Interop.swconst;
 
 namespace ReleasePack.Engine.Layout
 {
@@ -53,7 +54,10 @@ namespace ReleasePack.Engine.Layout
         public Dictionary<string, ViewEnvelope> SolveStandardLayout(
             double[] modelBoundingBox, 
             double scale, 
-            TemplateManager.StandardSheet sheet)
+            TemplateManager.StandardSheet sheet,
+            bool includeTop,
+            bool includeRight,
+            bool includeIso)
         {
             if (modelBoundingBox == null || modelBoundingBox.Length < 6) return null;
 
@@ -62,38 +66,48 @@ namespace ReleasePack.Engine.Layout
             double dy = Math.Abs(modelBoundingBox[4] - modelBoundingBox[1]) * scale;
             double dz = Math.Abs(modelBoundingBox[5] - modelBoundingBox[2]) * scale;
 
+            var layout = new Dictionary<string, ViewEnvelope>();
+
             // Assuming standard projection where Z is depth (Right/Top view geometry).
             var front = new ViewEnvelope { ViewType = "FRONT", Width = dx, Height = dy };
-            var top = new ViewEnvelope { ViewType = "TOP", Width = dx, Height = dz };
-            var right = new ViewEnvelope { ViewType = "RIGHT", Width = dz, Height = dy };
             
-            // ISO bounding box is a roughly rotated sum, approx worst case diagonal
-            double isoDiag = Math.Sqrt((dx*dx) + (dy*dy) + (dz*dz));
-            var iso = new ViewEnvelope { ViewType = "ISO", Width = isoDiag, Height = isoDiag };
-
             // 1. Anchor FRONT (Start bottom left equivalent, but centered in its quadrant)
-            // Left margin + half width
             front.TargetCenterX = _marginMeters * 2 + (front.Width / 2.0);
             front.TargetCenterY = _marginMeters * 2 + (front.Height / 2.0);
+            layout.Add("FRONT", front);
 
-            // 2. Derive TOP and RIGHT relatively
-            top.TargetCenterX = front.TargetCenterX;
-            top.TargetCenterY = front.MaxY + _marginMeters + (top.Height / 2.0);
+            // 2. Derive TOP and RIGHT relatively if requested
+            if (includeTop)
+            {
+                var top = new ViewEnvelope { ViewType = "TOP", Width = dx, Height = dz };
+                top.TargetCenterX = front.TargetCenterX;
+                top.TargetCenterY = front.MaxY + _marginMeters + (top.Height / 2.0);
+                layout.Add("TOP", top);
+            }
 
-            right.TargetCenterX = front.MaxX + _marginMeters + (right.Width / 2.0);
-            right.TargetCenterY = front.TargetCenterY;
+            if (includeRight)
+            {
+                var right = new ViewEnvelope { ViewType = "RIGHT", Width = dz, Height = dy };
+                right.TargetCenterX = front.MaxX + _marginMeters + (right.Width / 2.0);
+                right.TargetCenterY = front.TargetCenterY;
+                layout.Add("RIGHT", right);
+            }
 
             // 3. Place ISO in top right zone
-            iso.TargetCenterX = Math.Max(right.TargetCenterX, top.TargetCenterX + top.Width);
-            iso.TargetCenterY = Math.Max(top.TargetCenterY, right.TargetCenterY + right.Height);
-
-            var layout = new Dictionary<string, ViewEnvelope>
+            if (includeIso)
             {
-                { "FRONT", front },
-                { "TOP", top },
-                { "RIGHT", right },
-                { "ISO", iso }
-            };
+                double isoDiag = Math.Sqrt((dx*dx) + (dy*dy) + (dz*dz));
+                var iso = new ViewEnvelope { ViewType = "ISO", Width = isoDiag, Height = isoDiag };
+                
+                double maxX = front.MaxX;
+                double maxY = front.MaxY;
+                if (includeRight) maxX = layout["RIGHT"].TargetCenterX;
+                if (includeTop) maxY = layout["TOP"].TargetCenterY;
+
+                iso.TargetCenterX = Math.Max(maxX, (includeTop ? layout["TOP"].MaxX : front.MaxX)) + _marginMeters + (isoDiag / 2.0);
+                iso.TargetCenterY = Math.Max(maxY, (includeRight ? layout["RIGHT"].MaxY : front.MaxY)) + _marginMeters + (isoDiag / 2.0);
+                layout.Add("ISO", iso);
+            }
 
             // 4. Validate Boundaries (Do any views spill off the physical sheet?)
             // Sheet coordinates are typically [0,0] bottom-left to [Width, Height] top-right.

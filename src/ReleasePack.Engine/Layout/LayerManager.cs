@@ -33,7 +33,7 @@ namespace ReleasePack.Engine.Layout
             DrawingDoc draw = drawingDoc as DrawingDoc;
             if (draw == null) throw new InvalidOperationException("LayerManager requires a DrawingDocument.");
 
-            _layerMgr = draw.GetCurrentLayerManager();
+            _layerMgr = (LayerMgr)_drawingDoc.GetLayerManager();
             if (_layerMgr == null) throw new Exception("Failed to access Layer Manager.");
         }
 
@@ -79,12 +79,12 @@ namespace ReleasePack.Engine.Layout
             int swColorInt = color.R + (color.G * 256) + (color.B * 65536);
 
             // Check if layer exists; if so, update it. If not, add it.
-            Layer existingLayer = _layerMgr.GetLayer(name);
+            Layer existingLayer = (Layer)_layerMgr.GetLayer(name);
 
             if (existingLayer == null)
             {
                 DrawingDoc draw = (DrawingDoc)_drawingDoc;
-                draw.CreateLayer2(name, desc, swColorInt, (int)style, weightClass, true);
+                draw.CreateLayer2(name, desc, swColorInt, (int)style, weightClass, true, true);
             }
             else
             {
@@ -104,15 +104,6 @@ namespace ReleasePack.Engine.Layout
             if (swAnnotation != null)
             {
                 swAnnotation.Layer = activeLayer;
-            }
-        }
-
-        public static void PushToLayer(IView swView, string activeLayer)
-        {
-            if (swView != null)
-            {
-                // Note: Changing view layer puts all internal entities to that layer unless overridden.
-                swView.Layer = activeLayer;
             }
         }
     }

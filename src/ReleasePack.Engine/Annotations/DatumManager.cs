@@ -21,7 +21,7 @@ namespace ReleasePack.Engine.Annotations
         /// Inserts a Datum reference (e.g. [A], [B]) on the provided edge or coordinate
         /// and aggressively forces it to the designated layer.
         /// </summary>
-        public DatumFeatureSymbol InsertDatum(IView targetView, string label, double x, double y)
+        public IDatumTag InsertDatum(IView targetView, string label, double x, double y)
         {
             if (_drawing == null || targetView == null) return null;
 
@@ -32,15 +32,16 @@ namespace ReleasePack.Engine.Annotations
             // Select an arbitrary point to attach the datum to (usually an edge mid-point or similar)
             _drawing.Extension.SelectByID2("", "FACE", x, y, 0, false, 0, null, 0);
 
-            // Insert Datum
-            DatumFeatureSymbol datum = (DatumFeatureSymbol)_drawing.Extension.InsertDatumTag(label);
+            // Insert Datum using late-binding if interface is missing
+            dynamic ext = _drawing.Extension;
+            IDatumTag datum = (IDatumTag)ext.InsertDatumTag(label);
             if (datum != null)
             {
-                IAnnotation ann = datum.GetAnnotation();
+                IAnnotation ann = (IAnnotation)datum.GetAnnotation();
                 if (ann != null)
                 {
                     // Force the standard ISO/ANSI style and push to Layer
-                    Layout.LayerManager.PushToLayer(ann, Layout.LayerManager.LAYER_DATUMS);
+                    Layout.LayerManager.PushToLayer((dynamic)ann, Layout.LayerManager.LAYER_DATUMS);
                 }
             }
             

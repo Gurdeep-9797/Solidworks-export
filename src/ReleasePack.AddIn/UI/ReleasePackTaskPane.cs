@@ -72,6 +72,12 @@ namespace ReleasePack.AddIn.UI
         private Label _lblStatus;
         private RichTextBox _logBox;
 
+        // Dynamic V3 UI Polling
+        private Timer _selectionTimer;
+        private Label _lblActiveSelection;
+        private Label _lblSuggestions;
+        private HashSet<string> _lastSelectionPaths = new HashSet<string>();
+
         public ReleasePackTaskPane()
         {
             InitializeUI();
@@ -439,7 +445,49 @@ namespace ReleasePack.AddIn.UI
             this.Controls.Add(contentPanel);
             contentPanel.BringToFront(); // Above header
 
+            // ── V3 Active Dynamic Suggestions ──
+            y = 510;
+            var _pnlSuggestions = new Panel
+            {
+                Location = new Point(8, y),
+                Size = new Size(232, 40),
+                BackColor = Color.FromArgb(230, 240, 255),
+                BorderStyle = BorderStyle.FixedSingle
+            };
+            
+            _lblActiveSelection = new Label
+            {
+                Text = "Selection: None",
+                Location = new Point(5, 5),
+                AutoSize = true,
+                Font = new Font("Segoe UI", 8F, FontStyle.Bold),
+                ForeColor = Color.FromArgb(0, 102, 204)
+            };
+            _lblSuggestions = new Label
+            {
+                Text = "Tip: Select a part/feature to see hints.",
+                Location = new Point(5, 20),
+                Size = new Size(220, 30),
+                Font = new Font("Segoe UI", 8F),
+                ForeColor = Color.Black
+            };
+            _pnlSuggestions.Controls.Add(_lblActiveSelection);
+            _pnlSuggestions.Controls.Add(_lblSuggestions);
+            contentPanel.Controls.Add(_pnlSuggestions);
+
+            // Shift buttons down
+            _btnPreview.Top += 20;
+            _btnGenerate.Top += 20;
+            _progressBar.Top += 20;
+            _lblStatus.Top += 20;
+            _logBox.Top += 20;
+
             this.ResumeLayout(false);
+
+            // Start V3 UI Polling Loop
+            _selectionTimer = new Timer { Interval = 1000 };
+            _selectionTimer.Tick += OnSelectionTimerTick;
+            _selectionTimer.Start();
         }
 
         private GroupBox CreateGroupBox(string title, int y, int height)
@@ -633,6 +681,80 @@ namespace ReleasePack.AddIn.UI
                 _btnGenerate.Enabled = true;
                 _btnGenerate.Text = "Generate Tasks";
             }
+        }
+
+        #endregion
+
+        #region V3 Intelligence Update
+
+        private void OnSelectionTimerTick(object sender, EventArgs e)
+        {
+            if (_swApp == null) return;
+            
+            try
+            {
+                if (_swApp.ActiveDoc == null)
+                {
+                    UpdateDynamicUI("None", "Open a document to begin tracking logic.");
+                    return;
+                }
+
+                ModelDoc2 doc = (ModelDoc2)_swApp.ActiveDoc;
+                SelectionMgr selMgr = (SelectionMgr)doc.SelectionManager;
+                
+                if (selMgr == null || selMgr.GetSelectedObjectCount2(-1) == 0)
+                {
+                    UpdateDynamicUI("Document Level", "Exporting full assembly or part.");
+                    return;
+                }
+
+                int count = selMgr.GetSelectedObjectCount2(-1);
+                int type = selMgr.GetSelectedObjectType3(1, -1);
+                
+                if (count > 1)
+                {
+                    UpdateDynamicUI($"Multiple Selection", $"{count} components targeted.");
+                    return;
+                }
+
+                if (type == (int)swSelectType_e.swSelCOMPONENTS)
+                {
+                    Component2 comp = (Component2)selMgr.GetSelectedObjectsComponent4(1, -1);
+                    if (comp != null)
+                        UpdateDynamicUI("Component", $"Targeting {comp.Name2} exclusively.");
+                }
+                else if (type == (int)swSelectType_e.swSelBODYFEATURES)
+                {
+                    Feature feat = (Feature)selMgr.GetSelectedObject6(1, -1);
+                    if (feat != null)
+                    {
+                        string featType = feat.GetTypeName2().ToUpperInvariant();
+                        if (featType.Contains("HOLEWZD"))
+                            UpdateDynamicUI("Hole Feature", "Hole detected. Suggesting Section Views.");
+                        else if (featType == "EXTRUSION")
+                            UpdateDynamicUI("Extrude", "Found extrude. Depth bounding engaged.");
+                        else
+                            UpdateDynamicUI("Feature", "Specific topological feature selected.");
+                    }
+                }
+                else
+                {
+                    UpdateDynamicUI("Geometry", "Parent part logic will be inferred.");
+                }
+            }
+            catch
+            {
+                // Silent fail to prevent locking SW thread on COM transient errors
+            }
+        }
+
+        private void UpdateDynamicUI(string active, string suggestion)
+        {
+            if (_lblActiveSelection.Text != "Selection: " + active)
+                _lblActiveSelection.Text = "Selection: " + active;
+                
+            if (_lblSuggestions.Text != suggestion)
+                _lblSuggestions.Text = suggestion;
         }
 
         #endregion
