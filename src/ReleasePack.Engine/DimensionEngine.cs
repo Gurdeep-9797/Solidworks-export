@@ -51,9 +51,8 @@ namespace ReleasePack.Engine
             // 2. Center Marks & Centerlines on ALL views
             InsertCenterMarks(drawing);
 
-            // 3. V3 Deterministic Feature-Based Dimensioning 
-            var dimensioner = new Annotations.HierarchicalDimensioner(_swApp, _progress);
-            dimensioner.ApplyDeterministicDimensions(drawing, features);
+            // 3. Native SolidWorks Auto-Arrange Dimensions
+            AutoArrangeDimensions(drawing);
 
             // 4. Feature-specific annotations
             if (features != null)
@@ -278,7 +277,49 @@ namespace ReleasePack.Engine
             return false;
         }
 
-        // V3 Removes reliance on SmartAutoDimension. See Annotations/HierarchicalDimensioner.cs instead.
+        // ======================================================================
+        // 3. Smart Auto Arrange
+        // ======================================================================
+
+        private void AutoArrangeDimensions(DrawingDoc drawing)
+        {
+            try
+            {
+                _progress?.LogMessage("Running SolidWorks Auto-Arrange Dimensions...");
+
+                object[] views = (object[])drawing.GetViews();
+                if (views == null) return;
+
+                ModelDocExtension ext = ((ModelDoc2)drawing).Extension;
+
+                // Process first sheet
+                object[] sheetViews = null;
+                if (views[0] is object[] sViews)
+                    sheetViews = sViews;
+                else
+                    sheetViews = views; // Flattened array
+
+                foreach (object viewObj in sheetViews)
+                {
+                    View view = (View)viewObj;
+                    if (view == null || IsSheetOrIsoView(view)) continue;
+
+                    _progress?.LogMessage($"Auto-arranging dimensions for view '{view.Name}'");
+
+                    ext.SelectByID2(view.Name, "DRAWINGVIEW", 0, 0, 0, false, 0, null, 0);
+
+                    // Replaces the basic algorithmic bounds staggering with SW Native AutoArrange
+                    ext.AlignDimensions((int)swAlignDimensionType_e.swAlignDimensionType_AutoArrange, 0.0);
+                }
+                
+                // Clear selection
+                ((ModelDoc2)drawing).ClearSelection2(true);
+            }
+            catch (Exception ex)
+            {
+                _progress?.LogWarning($"AutoArrange failed: {ex.Message}");
+            }
+        }
 
         // ======================================================================
         // 4. Pattern Labels

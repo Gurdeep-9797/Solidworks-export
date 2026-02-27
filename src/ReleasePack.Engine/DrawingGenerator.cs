@@ -106,22 +106,28 @@ namespace ReleasePack.Engine
                 // 6. Lock sheet scale
                 templateManager.ApplyTemplateToDrawing(drawing, bestSheet, isoScale);
 
-                // 7. Calculate View Envelopes safely without overlap
+                // 7. Calculate View Envelopes safely without overlap iteratively
                 bool isAnsi = options.ViewStandard == ViewStandard.ThirdAngle;
                 var binSolver = new ReleasePack.Engine.Layout.BinPackingSolver(isAnsi);
                 var solvedLayout = binSolver.SolveStandardLayout(
                     bbox, isoScale, bestSheet, 
                     viewPlan.NeedTopView, viewPlan.NeedRightView, viewPlan.NeedIsoView);
                 
-                if (solvedLayout == null)
+                int maxIterations = 6;
+                int iteration = 0;
+                while (solvedLayout == null && iteration < maxIterations)
                 {
-                    _progress?.LogWarning("V3 Strict Layout Warning: Views marginally exceed paper boundaries. Attempting safety scale reduction.");
-                    // Fallback to next lowest scale if overlaps breach (Simple mitigation)
+                    _progress?.LogWarning($"Strict Layout Warning (Iter {iteration+1}): Views overlap/breach boundaries. Iteratively reducing scale.");
+                    // Drop scale by 10% and snap to nearest valid ISO scale
                     isoScale = ReleasePack.Engine.Layout.TemplateManager.GetValidISO5455Scale(isoScale * 0.9);
                     templateManager.ApplyTemplateToDrawing(drawing, bestSheet, isoScale);
+                    
+                    // Re-calculate Bin Packing
                     solvedLayout = binSolver.SolveStandardLayout(
                         bbox, isoScale, bestSheet, 
                         viewPlan.NeedTopView, viewPlan.NeedRightView, viewPlan.NeedIsoView);
+                        
+                    iteration++;
                 }
 
                 // 8. Place actual drawing views using determined safe zones
@@ -470,19 +476,21 @@ namespace ReleasePack.Engine
         {
             var swModel = (ModelDoc2)drawing;
 
-            // Define the map of CustomProperty -> Value
+            // Define exactly what the Title Block Template (G.DRWDOT) needs
+            // Project Name, Client Name, Designer, Company Name
             var props = new Dictionary<string, string>
             {
+                { "Project Name", options.ProjectName ?? "" },
+                { "Client Name", "" }, // Can be exposed to ExportOptions later
+                { "Designer", options.DrawnBy ?? "" },
+                { "Company Name", options.CompanyName ?? "" },
+                
+                // Keep standard parts
                 { "Description", model.Description },
                 { "PartNo", model.PartNumber },
                 { "Material", model.Material },
                 { "Revision", model.Revision },
-
-                // Project Metadata from UI
-                { "Company", options.CompanyName },
-                { "Project", options.ProjectName },
-                { "DrawnBy", options.DrawnBy },
-                { "CheckedBy", options.CheckedBy },
+                { "CheckedBy", options.CheckedBy ?? "" },
                 { "Date", DateTime.Now.ToShortDateString() }
             };
 
@@ -593,13 +601,21 @@ namespace ReleasePack.Engine
         }
 
         /// <summary>
-        /// Get the drawing template path using the shared multi-source resolver.
+        /// Get the drawing template path, forcing the requested G.DRWDOT file.
         /// </summary>
         private string GetDrawingTemplatePath(ExportOptions options)
         {
+            // Specifically enforce the requested G.DRWDOT template from 2020 layout
+            string gdotPath = @"C:\ProgramData\SOLIDWORKS\SOLIDWORKS 2020\templates\G.DRWDOT";
+            if (File.Exists(gdotPath))
+            {
+                _progress?.LogMessage($"Using explicit template: {gdotPath}");
+                return gdotPath;
+            }
+
             string path = SwVersionHelper.FindDrawingTemplate(_swApp, options);
             if (!string.IsNullOrEmpty(path))
-                _progress?.LogMessage($"Using template: {path}");
+                _progress?.LogMessage($"Fallback to template: {path}");
             else
                 _progress?.LogWarning("No drawing template found. Using SolidWorks default.");
             return path;
